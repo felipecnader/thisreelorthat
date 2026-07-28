@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "dedupeKey": "tmdbId",
+  "_comment": "Public lists that build the recommendation catalog. Swap freely; the pipeline reconciles labels incrementally and re-runs the batch-control gate. Dedupe is by TMDb ID, never by title.",
+  "sources": [
+    { "id": "lb-top-500",     "type": "letterboxd_list", "url": "https://boxd.it/8HjM" },
+    { "id": "lb-most-fans",   "type": "letterboxd_list", "url": "https://boxd.it/nVqt6" },
+    { "id": "reddit-once",    "type": "letterboxd_list", "url": "https://boxd.it/pDmkw", "tailCutIfOver": 1500 },
+    { "id": "lb-animation",   "type": "letterboxd_list", "url": null, "note": "official Letterboxd animation top 250" },
+    { "id": "sight-sound-22", "type": "letterboxd_list", "url": null, "note": "Sight & Sound 2022 critics top 100" }
+  ],
+  "user": {
+    "watchlist": { "include": true },
+    "watched":   { "role": "probes", "excludeFromCandidates": true }
+  },
+  "probeBlocklist": {
+    "_comment": "Optional. Watched films that must never appear as a question, regardless of geometry. Personal; keep the file out of version control.",
+    "file": "probe-blocklist.json"
+  },
+  "provenance": { "storeSourceMembership": true },
+  "availability": { "provider": null, "region": null, "ttlHours": 24, "verifyFinalPick": true },
+  "refresh": { "lists": "monthly", "user": "weekly" }
+}

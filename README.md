@@ -1,0 +1,225 @@
+# ThisReelOrThat
+
+**An adaptive this-or-that quiz that infers what you want to watch tonight — in 5–14 taps, with zero LLM calls at quiz time.**
+
+You answer a short sequence of "this or that" pairs built from films you've already seen. Each answer updates a Bayesian posterior over a catalog of films you *haven't* seen. The quiz stops when confidence crosses a threshold and returns a shortlist of three. All AI inference happens offline in a labeling pipeline; the quiz itself is arithmetic — it feels like an interface, not a conversation.
+
+> **Read this first.** This is an honest engineering log as much as a product. The engine works, is fully instrumented, and beats random. It has **not** been shown to beat the much simpler baseline of "just recommend from my taste profile, no questions asked." Eight mechanism hypotheses were tested and refuted; one intervention produced a large replicated gain. All of it is documented in [`DECISIONS.md`](DECISIONS.md), including the failures. If you're here for the research value, the failures are the research value.
+
+---
+
+## What's actually measured
+
+Synthetic respondent (calibrated at 75.4% agreement with the human owner), targets hidden from the engine, N=50 per configuration.
+
+| Catalog | Metric | Random | Engine | Ratio |
+|---|---|---:|---:|---:|
+| 282 films | target's rank | p50 | **p9–11** | **~5×** |
+| 1,215 films | target's rank | 608th | 422nd | 1.4× |
+| 1,215 films | right mood cell in top-3 | 3.41% | 8.0% | **2.35×** |
+| 1,215 films | *same, no quiz at all* (taste profile only) | 3.41% | 6.0% | 1.76× |
+| 50 films | right mood cell in top-3 | 30.5% | 44.0% | 1.44× |
+
+**The uncomfortable row is the fourth one.** With a large catalog, recommending straight from a stable taste profile — asking zero questions — reaches 1.76× random. The quiz's posterior alone reaches 1.17×; it only beats the no-quiz baseline once a semantic reranking layer is added, and that layer's evidence is 4 sessions versus 2.
+
+**Why the gap between catalogs is mechanical, not a tuning failure.** The engine stops when its posterior concentrates to roughly 33 effective candidates. In a 282-film catalog the target lands around rank 30 — confidence is calibrated. In a 1,215-film catalog it still declares ~33 and the target lands at 422 — **13× overconfident.** Resolution is roughly constant in absolute terms, so the same instrument is a good filter over hundreds of films and a weak one over thousands.
+
+**All of this measures a task the product doesn't perform.** The benchmark asks the engine to recover one specific hidden film. Real use has no target: you have a mood, and many films satisfy it. Whether the recommendations are *good* is not answerable offline.
+
+---
+
+## The core idea
+
+### A pairwise choice is a noisy 1-bit probe — if you control what it measures
+
+"Parasite or Spider-Verse?" has a signal problem: the two differ in realism, country, animation, tone, and pacing simultaneously. When you pick one, which did you express?
+
+The intended fix was **near-twin pairs** — two films close on every axis but one. Films are labeled offline on 12 continuous axes; a good probe differs sharply on exactly one.
+
+It half-worked, and the half that failed is instructive:
+
+- **Near-twins are illegible.** "Norbit or Superbad?" is a real pair the engine produced. Both are light comedies; the contrast is a nuance invisible to a human. Sessions were abandoned over pairs like this.
+- **Axis purity is mathematically impossible for the axes that matter.** `heavy_light` correlates +0.90 with `gray_cathartic`, +0.78 with `demanding_casual`, −0.72 with `comic_serious`. A film that differs in weight also differs in catharsis — that's the structure of cinema, not a catalog gap. Requiring purity yields 7–11 usable pairs out of ~80,000.
+- **The reason for a choice is not recoverable from the pair's geometry.** Measured directly: agreement between the respondent's declared reason and the axis the engine actually credited was **9.5%**, against a 10.3% chance baseline (n=1,952 rounds). This is the ceiling of the format, and it explains why eight separate attempts to fix credit assignment all failed.
+
+The design that survived: **coarse pairs (high contrast, cross-cluster) until the region is located, then narrow pairs inside it.** Narrow pairs are good once the engine knows the neighborhood and bad before.
+
+### The quiz identifies mood cells, not films
+
+At the resolution of 12 labels, a catalog collapses into a few dozen distinguishable **mood neighborhoods**. Two films with near-identical vectors are indistinguishable by *any* sequence of answers — that's an information floor, not a bug. So:
+
+- The posterior lives over films, but confidence is measured over clusters.
+- Stopping is relative to the cluster structure's entropy floor, so it survives catalog swaps.
+- Success means "the right kind of film for tonight," which is what a human means by a good recommendation.
+
+### Probes ≠ candidates
+
+**`probeCatalog`** — films you've watched. Only these appear in questions. **`recommendationCatalog`** — films you haven't: your watchlist plus curated public lists, minus watched. The posterior lives here.
+
+---
+
+## The math
+
+Everything below runs in milliseconds. No model calls during the quiz.
+
+### Labels
+
+Each film is a vector in `[-1,+1]^12`: heavy↔light, intimate↔epic, **literally-possible↔impossible**, **stable↔subjective reality**, slow↔propulsive, cerebral↔emotional, morally-gray↔cathartic, classic↔contemporary, animation↔live-action, demanding↔casual, English↔international, comic↔serious.
+
+Produced by an LLM under a frozen rubric with anchor films pinned by year + TMDb ID, **three independent passes per film with per-axis median**, and 15 control films re-inferred in every batch (batch rejected if mean drift > 0.08 or any single axis > 0.15).
+
+**Axis weights are not uniform.** `english_international` is weighted **0** and `animation_live_action` **0.2**. Both are effectively binary — 99.1% and 99.7% of films sit at |v|>0.8 — so a mixed pair contrasts 2.96σ on language against 1.0–1.4σ for real mood axes, and the flag dominates every such pair. Worse, with uniform weights **100% of clusters were >90% pure by language** and no cluster had mood crossing animation: the cluster structure was ~9 mood cells replicated across 4 quadrants, and one spurious credit locked the posterior into the wrong quadrant permanently.
+
+### Posterior and update
+
+Session state is a probability vector over candidates. Each answer applies a tempered soft update, `p ← normalize(p · L(answer)^β)` with β = 0.70. **No hard elimination** — answers are noisy, and a hard cut on question 2 is unrecoverable.
+
+For a pair `(a,b)`: `pref(x)` is `x`'s projection onto `d = a − b` from the midpoint, clipped; `shared(x)` is closeness to what `a` and `b` have in common.
+
+### Four answers
+
+| Answer | Meaning |
+|---|---|
+| **A / B** | evidence toward that side of the tested contrast |
+| **Either works** | utilities close *from above*; weak pull toward the boundary, axis stays re-testable |
+| **Neither appeals** | rejection of the pair's *shared* profile — informative about the axes the pair shares, not the one it contrasts |
+
+Calibrated: κ = 3.5, evidence cap 1.25, σ_tie 0.55, "neither" strength 2.0.
+
+**"Neither" is the single most important mechanism in the system.** Forcing a choice measurably poisons the posterior: with the "neither" option removed, median target rank went from 31.5 to 45 and mean from 40 to 77 (n=50). A bad pair answered under duress injects a *confounded direction*; refusing only suppresses. This was first noticed in human sessions (0 "neither" → target at rank 252; 3 "neither" → target as pick #1) and then confirmed in ablation. If you build something like this, build the refusal button first.
+
+### Pair selection
+
+Expected reduction in the cluster posterior's entropy, computed in closed form from the likelihood table. **No per-axis uncertainty ledger** — axes are correlated, so tracking "which axis is least certain" double-counts and wastes questions. Variety comes from sampling within a 3% band of optimal, seeded by session hash.
+
+### Stopping
+
+Ask at least 5; stop when top-3 cluster mass ≥ 0.75 **and** `exp(H)/floor ≤ 2.0`; hard ceiling at 10 + min(neither-count, 4).
+
+⚠️ **In production-scale validation this rule fired in 3 of 50 sessions; 94% hit the ceiling.** No threshold tested fixed it. The confidence gate rarely bites at large catalog sizes. Documented, unsolved.
+
+### Prior: stable taste as a mixture, never a mean
+
+`p₀ ∝ stable^0.30 · uniform^0.70`. Stable taste is a **2–3 component mixture** over highly-rated watched films, never an average — averaging bimodal taste points at a lukewarm film nobody wants. Measured: mean-vector prior scored −7.17 average log-probability, uniform −7.10, 2-cluster mixture **−5.22**. The mean lost to knowing nothing.
+
+### Delivery
+
+Shortlist of three. The posterior's top-3 enters **integrally** — cluster diversity never displaces a high-confidence candidate. Eligibility (runtime, availability, identity) is a **mask applied before ranking**, never a filter after; metadata failure never excludes a candidate. Identity resolves through TMDb; title-matching services are optional enrichment only.
+
+---
+
+## Design history: what didn't survive
+
+This section exists because the rejected designs teach more than the surviving ones. Full ledger in [`DECISIONS.md`](DECISIONS.md).
+
+### Label quality was the bottleneck, not the algorithm
+
+Every algorithmic intervention moved the regression suite's median target rank from 30 to 30. **Re-auditing the labels moved it from 30 to 7.**
+
+The audit was crude: read twelve well-known films' vectors and check them against what you know. Four were indefensible — *Pan's Labyrinth* marked English-language, *Groundhog Day* marked realistic (a time loop), *Alien* at −0.9 realistic while *2001* sat at +0.9, *The Godfather* nearly non-epic. Roughly a third of famous films had at least one broken axis.
+
+**And the labeler's self-reported confidence was worthless:** mean 0.939, and every error above carried 0.96–0.99. Only disagreement across independent passes detects errors. Facts that are lookups — language, animation, year — should never come from a language model's memory at all.
+
+**A labeling error is worse than it looks**, because the pair selector picks pairs by *high contrast*: a film with a wrongly extreme value is *preferentially* chosen as a probe. Bad labels don't sit still; they become bad questions.
+
+### Eight refuted mechanisms
+
+Each of these was a plausible causal story about why the posterior drifts. Each was tested by ablation. All eight failed.
+
+| Hypothesis | Result |
+|---|---|
+| Scale update strength by pair purity | 57.4% → 57.4%, no change |
+| Leave-one-out corroboration before stopping | flagged 100% of sessions — the ruler measured itself |
+| Credit only the axes the pair was designed to test | made drift worse |
+| Similarity bonus to the endorsed film (RBF in label space) | weak and unstable at every β |
+| Whitening / Mahalanobis metric | improved 4 targets, hurt 5 |
+| Freeze axes the region can't probe | target rank 164 → 229 |
+| Attenuate incidental credit (1.0 / 0.5 / 0.3 / 0.0) | monotonically worse — noisy credit is still useful |
+| Shared-profile term acting as a ratchet in A/B | 178 → 178 |
+
+The unifying explanation arrived last: reason-versus-credit agreement is 9.5% against a 10.3% chance baseline. **There was no signal to recover.** No update rule can infer *why* a human chose.
+
+### A pool "improvement" that made things worse
+
+Rebuilding the pair pool with weighted geometry cost coverage on 8 of 10 axes (`subjective_unreality` 226 → 45 usable pairs). Cause: the coverage invariant was written as a **floor** (≥32 pairs per axis), so the optimizer satisfied the minimum and spent the rest of the pool elsewhere. **Coverage belongs in the objective function, not in a constraint.** The old pool was restored.
+
+### A safety gate that cost more than it saved
+
+A "blind probe" gate rejected pairs whose midpoint sat far from any high-mass candidate — pairs like "Thor or Uncharted?" on a drama night. Ablation: turning it **off** improved same-cluster accuracy from 32% to 44%. Those pairs are informative precisely *because* they get refused, and refusal suppresses a whole region. Now disabled.
+
+### A promotion that dissolved under audit
+
+The semantic reranking layer was promoted on 500 sessions showing +9.8 p.p. Then a validity check found that in 103 of those sessions **the target itself appeared as a probe and could be endorsed** — a channel production doesn't have, since probes are watched films and candidates aren't. On the 397 clean sessions the gain fell to +1.9 p.p., 1.05× matched random, with target-in-top-3 indistinguishable from chance. The layer remains active with its evidence explicitly marked weak.
+
+**Check for target leakage in your evaluation harness before believing any number it produces.**
+
+### Shadow deployment that couldn't see
+
+The rollout plan was to run the new engine in shadow against the old one on real sessions. Structurally impossible: the new engine diverged from the legacy pair sequence at 12 of 12 pairs, so the shadow ran handcuffed — no adaptive selection, no fourth answer, no stopping, no pick. **Shadow deployment only works when the shadow can act.** For a system whose *questions* are its behavior, you need interleaving or A/B, not shadowing.
+
+### The simulator's blind spot
+
+Synthetic personas answer by the same likelihood the engine uses, so a nonsensical pair still produces an internally coherent answer. The simulator cannot represent an *illegible question* — the automated respondent taps "neither" and moves on; a human abandons the session. Every legibility problem in this project was found by a human using it, never by 500 simulated sessions.
+
+---
+
+## Repository layout
+
+```
+.
+├── README.md                     # this file
+├── DECISIONS.md                  # full decision ledger (Portuguese — the working record)
+├── PUBLISHING-PLAN.md            # clean-room extraction plan and privacy rules
+├── catalog.config.json           # which lists build your recommendation catalog
+├── data/
+│   └── labels-default-catalog.json   # 1,131 films × 12 axes, pre-labeled
+└── LICENSE
+```
+
+**The engine implementation is not in this repository yet.** The reference implementation is entangled with a private agent stack (absolute paths, secret manager, chat transport) and needs a clean-room rewrite before publication — see `PUBLISHING-PLAN.md` for the exact list of couplings. What ships today is the labeled catalog, the rubric-and-method documentation, and the full decision record. The math above is specified precisely enough to reimplement.
+
+## The pre-labeled catalog
+
+`data/labels-default-catalog.json` contains **1,131 films × 12 axes**, produced by `gpt-5.4-mini` under a frozen rubric, with the prompt hash in the file's provenance block. Sources are public lists only (Letterboxd Top 500, Top 250 Most Fans, an r/movies "watch once" list, an animation Top 250, Sight & Sound 2022), deduplicated **by TMDb ID, never by title** — remakes and homonyms break string matching. Each film records which lists include it.
+
+Using it means you only pay labeling cost for films it doesn't cover — chiefly your own watched films, which are personal by definition.
+
+## Labeling your own catalog
+
+1. Resolve every film to a TMDb ID; dedupe by ID.
+2. Pull language, animation status and year **from TMDb**, not from the model.
+3. Label the remaining axes in three passes, median per axis; disagreement across passes is your confidence signal.
+4. Include the 15 control films in every batch; reject the batch on drift.
+5. Adding an axis? Check its correlation against existing probing dimensions. At |r| ≥ 0.85 it stays as a matching label and never earns quiz questions.
+6. Rebuild clusters, entropy floor, δ and stopping thresholds afterward — **thresholds are catalog-specific and do not transfer.**
+
+Keep one rubric version per catalog build. Mixed-rubric labels are the quiet killer of pair quality.
+
+## Restricting to a single list
+
+The engine is catalog-agnostic: point the posterior at any labeled candidate set and keep your watched films as probes. That makes "only recommend from this specific list" a configuration, not a feature.
+
+Three traps, all paid for in practice:
+
+- **An impossible threshold.** A stopping rule expressed as an *absolute* number of effective candidates can sit **below the catalog's entropy floor**, in which case it never fires. Symptom: a sweep over seven threshold values returning identical results on every row. Always express thresholds as a multiple of the floor.
+- **A disproportionate round cap.** With 50 candidates and a floor near 7, the instrument cannot resolve better than ~7 films. Spending 14 rounds on that is waste; 8 suffices.
+- **Semantic reranking may not help small catalogs.** In a 50-film context it scored 48% against 48.7% for matched random — nothing. Test per context.
+
+Two baselines decide whether a context is worth shipping: three random films from the whole catalog (does the quiz do anything at all?) and random within the rerank window (does the semantic layer earn its place?). In the 50-film context the quiz cleared the first comfortably — 44% versus 30.5%, target-in-top-3 12% versus 6.1% — and failed the second, so it shipped without reranking.
+
+## Honest limitations
+
+- **Instrument resolution is roughly the top 10% of the catalog**, measured five independent times. Chasing exact top-1 is wasted effort.
+- **The stopping rule rarely fires at large catalog sizes** (94% ceiling rate). Unsolved.
+- **Same-cluster metrics are not comparable across catalogs** — random baselines differ (30.5% at 9 clusters, 3.41% at 80). Report ratio over the catalog-appropriate random control, plus normalized lift.
+- **The engine has no demonstrated advantage over a no-quiz taste-profile baseline at large catalog size.**
+- **Validation is synthetic-first.** Real ground truth accumulates from post-film feedback, one tap at a time.
+- **Similarity to endorsed films optimizes for familiarity**, which may suppress discovery. If recommendations start feeling predictable, the semantic layer is the first suspect.
+
+## License
+
+MIT.
+
+## Acknowledgments
+
+Built through a long dialogue between a human product owner and two AI agents — one designing and reviewing, one implementing and pushing back. Most of the good decisions in this document came from the implementing agent refuting the reviewer's proposal with data, or from the human noticing that a recommendation made no sense before any metric said so. The receipts are in `DECISIONS.md`.
