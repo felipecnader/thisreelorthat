@@ -20,7 +20,7 @@ Convenção: **ATIVO** roda em produção. **REJEITADO** foi testado e reprovado
 
 Catálogos: 282 probes (assistidos, incluindo séries) · 1.215 candidatos (não assistidos).
 
-Contextos privados adicionais (listas pessoais) rodam fora do repositório — ver §9.
+Contextos privados adicionais (listas pessoais) rodam fora do repositório — ver §10.
 
 ---
 
@@ -54,10 +54,30 @@ ATIVO:
 - **Mínimo 5 rodadas, teto 10 + min(nenhum, 4).**
 - **Parada:** top-3 ≥ 0,75 e `exp(H)/piso ≤ 2,0`. ⚠️ Em validação sintética de escala real, a parada disparou em 3 de 50 sessões — 94% bateram o teto. Ver §6.
 - **Guarda de evidência afirmativa:** pick simples exige ≥3 respostas A/B e A/B ≥ "nenhum"; caso contrário sai pick duplo por polos com baixa confiança.
-- **Entrega:** shortlist de 3, top-3 do posterior entra integralmente, piso de 2% da massa do topo, dedupe por franquia.
+- **Entrega: um pick, não shortlist.** `argmax` do posterior após máscara de elegibilidade, dedupe de franquia e rerank semântico. Botões `[me dá outro]` e `[vou assistir]`.
+  - `me dá outro` anda na ordem ranqueada (2º, 3º, 4º...) sem recalcular posterior nem mudar de região. Cada toque é logado como **rejeição explícita** daquele filme, com a posição — é o único canal de item que o sistema tem.
+  - Após ~5-6 recusas o card avisa que a confiança caiu. Não bloqueia.
+  - `vou assistir` marca aceitação real. Sem esse toque nada conta como aceito — o quiz também é usado pra testar e pra demonstrar.
+  - A ordem ranqueada é **íntegra**: diversidade de cluster nunca desaloja candidato de alta confiança.
 - **Elegibilidade é máscara ANTES do ranqueamento.** Nunca filtro depois. Isso morde duas vezes na história do projeto (duração e disponibilidade).
-- **Identidade por TMDB.** OMDb só pós-shortlist, como metadata opcional; falha de match nunca exclui candidato.
+- **Identidade por TMDB.** Serviços de match por título entram só como enriquecimento pós-pick; falha de match nunca exclui candidato.
+- **Dois canais de feedback, deliberadamente separados.** `vibe` (👍/👎: "era a vibe que eu esperava?") avalia o **motor**. Nota/review no Letterboxd avalia o **filme**. Misturar os dois ensina errado — filme ótimo entregue na noite errada levaria 👍.
+- **Lembrete de log:** ao aceitar um pick, agenda um lembrete único para duração + 30 min, com botão `[já loguei]`. Review mandado na conversa é gatilho suficiente.
 - **Gosto estável como mistura de 2 clusters.** Média de vetores perde até para prior uniforme quando o gosto é bimodal (−7,17 vs −7,10 vs −5,22 em log-prob).
+
+---
+
+### Regra de escopo do quiz
+
+**A tela do quiz é só isso-ou-aquilo.** Um par, quatro botões, repete até a parada. Nada além disso entra: nem palpite corrigível, nem chips de direção, nem legenda de eixo, nem quinta resposta. Qualquer elemento que peça raciocínio explícito sobre atributos quebra a premissa de ler vontade do subconsciente, e já está vetado por princípio.
+
+Única exceção: a **pergunta de duração** no início. É contexto declarado, não mood. E é **teto**, não faixa — "tenho 150 minutos" significa qualquer filme até 150.
+
+### Métrica de produto
+
+**Posição do pick aceito.** Por sessão, em que posição do ranking estava o filme aceito com `vou assistir` (1 = acertou de primeira). É avaliação de ranqueamento com ground truth real, saindo do uso normal, sem protocolo.
+
+`SC@3` (célula certa no top-3) foi a métrica durante a fase de validação sintética e **deixou de ser métrica de produto** quando a entrega virou pick único.
 
 ---
 
@@ -75,11 +95,51 @@ ATIVO:
 
 ---
 
-## 5. Rejeitados
+## 5. Transporte — a lição mais transferível do projeto
+
+Durante semanas a premissa foi "zero inferência de IA no quiz". Ela valia pro motor e era **falsa pro transporte**.
+
+Medição de uma rodada real, do toque no botão até a próxima pergunta na tela: **179,2 segundos**.
+
+| etapa | tempo |
+|---|---:|
+| callback → agente desperto | ~34,4 s |
+| agente desperto → handler começar | ~16,1 s |
+| leitura de estado e comandos auxiliares | ~1,9 s |
+| **seleção do par** | **28,6 ms** |
+| **preparação de mídia** | **63,7 ms** |
+| API do Telegram | 1,73 s |
+| LLM/orquestração entre comandos | ~141 s |
+
+**O motor é 0,05% da espera.** 92 ms de 179.200 ms. Os outros 99,95% eram o agente acordando, lendo skill, procurando perfil, consultando `--help` e decidindo o que executar — a cada toque de botão.
+
+Todo o trabalho de otimização feito antes disso (prefetch especulativo das 4 respostas, vetorização do EIG, orçamento de 300 ms na seleção do par) melhorou um componente **três ordens de magnitude menor** que o gargalo real.
+
+**Nenhuma das 850 sessões sintéticas podia achar isso**, porque nelas não existe Telegram nem agente. Foi achado em uma sessão de uso.
+
+### Arquitetura correta
+
+`callback do Telegram → serviço residente → estado em memória → likelihood/seleção → imagem em disco → Telegram`
+
+- **Processo residente** (systemd user service): carrega o runtime uma vez no startup, mantém em memória, persiste estado a cada resposta.
+- **Bot dedicado** só pro quiz, isolando o raio de falha da mensageria principal.
+- **Zero LLM por rodada.** O agente entra em duas pontas apenas: warming (offline) e card final se houver pedido de análise.
+- **Cache permanente dos pôsteres dos probes.** Os pares só usam os assistidos, sempre os mesmos filmes — baixa uma vez, nunca mais busca em runtime.
+- **Pré-composição com `file_id`.** As imagens "A vs B" de cada par do pool são compostas e enviadas uma vez; o Telegram devolve um `file_id` reutilizável. Depois disso enviar uma rodada é uma chamada com um ID, sem upload. Invalidado por hash do runtime ou troca de bot.
+
+Critério de aceite: p50 < 500 ms do toque até a pergunta na tela, p99 < 2 s.
+
+**Lição geral: meça o caminho ponta a ponta antes de otimizar qualquer componente.** Perfil de CPU do algoritmo não vê o gargalo se ele mora no transporte.
+
+---
+
+## 6. Rejeitados
 
 ### Vetados pelo dono do produto (não voltam)
 
-Conjuntos de 3 filmes por lado · legenda de eixo no par · tríades · perguntas de rejeição ("qual você NÃO quer") · quinta resposta ("não lembro desses").
+Conjuntos de 3 filmes por lado · legenda de eixo no par · tríades · perguntas de rejeição ("qual você NÃO quer") · quinta resposta ("não lembro desses") · **palpite corrigível** · **shortlist de 3**.
+
+Notas sobre os dois últimos: o **palpite corrigível** ("tá parecendo noite de X — é isso?" com atalhos de direção) chegou a ser implementado e foi **removido do runtime**, não apenas desativado. Ele disparava após 6 rodadas sem localizar e substituía a rodada — mas os botões eram vocabulário de rubrica com outro nome ("mais acelerado" = `slow_propulsive`), exatamente o que a legenda de eixo tinha de errado. A **shortlist de 3** foi proposta do lado de design, nunca pedido do produto; virou pick único.
 
 Razão comum: o quiz existe para ler vontade do subconsciente. Nomear o eixo ou pedir raciocínio explícito empurra para o modo consciente e destrói a premissa.
 
@@ -109,7 +169,7 @@ Gatilho de desativação: o primeiro sinal real de recomendações previsíveis 
 
 ---
 
-## 6. Limitações conhecidas
+## 7. Limitações conhecidas
 
 **Resolução do instrumento: ~top 10%.** Medido cinco vezes de forma independente. Com 282 candidatos, o alvo aterrissa consistentemente entre a 16ª e a 39ª posição. Isso é piso de entropia, não falta de calibração: filmes com vetores quase idênticos são indistinguíveis por qualquer sequência de respostas. **Perseguir top-1 é perda de tempo** — o produto entrega célula de mood, não filme exato.
 
@@ -129,17 +189,19 @@ Gatilho de desativação: o primeiro sinal real de recomendações previsíveis 
 
 ---
 
-## 7. Pendente
+## 8. Pendente
 
 1. **Cobertura como objetivo na função de build do pool** (não como piso de 32). Dormente: o v2 ativo já tem cobertura boa; só importa se alguém reconstruir o pool.
 2. **Auditoria manual dos rótulos** — 7 filmes de confiança baixa remanescentes (3 em `gray_cathartic`) + 2 eixos divergentes de *Funeral Parade of Roses* (`slow_propulsive`, `classic_contemporary`).
 3. **Revisão de rubrica de `gray_cathartic`** — 3 de 7 casos incertos concentrados nele.
-4. **Repo público** — este arquivo é a primeira peça.
-5. **👍/👎 pós-filme** — ativo e acumulando. É a única fonte de verdade sobre gosto real; nenhuma análise offline substitui.
+4. **Serviço residente** — núcleo construído, aguardando token do bot dedicado, warming dos `file_id` e medição real de p50/p99. Até então o transporte segue passando pelo agente.
+5. **Bug aberto: piso de entropia obsoleto sob máscara.** O piso é calculado no build do catálogo cheio, mas as máscaras (duração, disponibilidade, blocklist) encolhem o conjunto elegível sem atualizar o piso. Como a parada divide por ele, ela dispara **prematuramente** em qualquer sessão com filtro. O fix é recalcular piso e δ no início da sessão sobre o conjunto elegível real. Não medido, não corrigido — sintoma observável: parar em 5-6 rodadas e entregar pick ruim.
+6. **Logging automático no Letterboxd** — o Letterboxd não tem API pública de escrita. Caminho ainda não definido (automação de navegador ou import CSV). Até então, lembrete com botão `[já loguei]` e log manual.
+7. **Feedback de vibe e posição do pick aceito** — acumulando com o uso. São as duas únicas fontes de verdade que existem; nenhuma análise offline substitui.
 
 ---
 
-## 8. Lição de método
+## 9. Lição de método
 
 Oito hipóteses de mecanismo foram refutadas por ablação. A única intervenção com efeito grande e replicado veio de **verificação empírica direta** — auditar 12 filmes conhecidos na mão e achar 4 rótulos indefensáveis.
 
@@ -149,7 +211,7 @@ E o instrumento que achou mais bugs reais não foi o simulador de 500 sessões �
 
 ---
 
-## 9. Contextos múltiplos — restringir a um catálogo específico
+## 10. Contextos múltiplos — restringir a um catálogo específico
 
 O motor é agnóstico de catálogo: o posterior roda sobre qualquer conjunto de candidatos rotulado, e os probes continuam sendo os assistidos. Isso permite criar um **contexto** que responde apenas dentro de uma lista escolhida — uma lista de melhores do ano, uma seleção de festival, filmes de um diretor, o que for.
 

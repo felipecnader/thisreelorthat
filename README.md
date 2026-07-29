@@ -2,7 +2,7 @@
 
 **An adaptive this-or-that quiz that infers what you want to watch tonight — in 5–14 taps, with zero LLM calls at quiz time.**
 
-You answer a short sequence of "this or that" pairs built from films you've already seen. Each answer updates a Bayesian posterior over a catalog of films you *haven't* seen. The quiz stops when confidence crosses a threshold and returns a shortlist of three. All AI inference happens offline in a labeling pipeline; the quiz itself is arithmetic — it feels like an interface, not a conversation.
+You answer a short sequence of "this or that" pairs built from films you've already seen. Each answer updates a Bayesian posterior over a catalog of films you *haven't* seen. The quiz stops when confidence crosses a threshold and returns a single pick, with a button to ask for another. All AI inference happens offline in a labeling pipeline; the quiz itself is arithmetic — it feels like an interface, not a conversation.
 
 > **Read this first.** This is an honest engineering log as much as a product. The engine works, is fully instrumented, and beats random. It has **not** been shown to beat the much simpler baseline of "just recommend from my taste profile, no questions asked." Eight mechanism hypotheses were tested and refuted; one intervention produced a large replicated gain. All of it is documented in [`DECISIONS.md`](DECISIONS.md), including the failures. If you're here for the research value, the failures are the research value.
 
@@ -16,9 +16,11 @@ Synthetic respondent (calibrated at 75.4% agreement with the human owner), targe
 |---|---|---:|---:|---:|
 | 282 films | target's rank | p50 | **p9–11** | **~5×** |
 | 1,215 films | target's rank | 608th | 422nd | 1.4× |
-| 1,215 films | right mood cell in top-3 | 3.41% | 8.0% | **2.35×** |
+| 1,215 films | right mood cell in top-3 * | 3.41% | 8.0% | **2.35×** |
 | 1,215 films | *same, no quiz at all* (taste profile only) | 3.41% | 6.0% | 1.76× |
-| 50 films | right mood cell in top-3 | 30.5% | 44.0% | 1.44× |
+| 50 films | right mood cell in top-3 * | 30.5% | 44.0% | 1.44× |
+
+\* `SC@3` was the metric during synthetic validation. It is **no longer the product metric** — delivery is a single pick, so what matters is the rank of the film the user actually accepts. That number only accumulates from real use.
 
 **The uncomfortable row is the fourth one.** With a large catalog, recommending straight from a stable taste profile — asking zero questions — reaches 1.76× random. The quiz's posterior alone reaches 1.17×; it only beats the no-quiz baseline once a semantic reranking layer is added, and that layer's evidence is 4 sessions versus 2.
 
@@ -104,7 +106,21 @@ Ask at least 5; stop when top-3 cluster mass ≥ 0.75 **and** `exp(H)/floor ≤ 
 
 ### Delivery
 
-Shortlist of three. The posterior's top-3 enters **integrally** — cluster diversity never displaces a high-confidence candidate. Eligibility (runtime, availability, identity) is a **mask applied before ranking**, never a filter after; metadata failure never excludes a candidate. Identity resolves through TMDb; title-matching services are optional enrichment only.
+**One pick, not a shortlist.** `argmax` of the posterior after eligibility masking, franchise dedupe and optional semantic reranking, with two buttons: **another one** and **I'll watch this**.
+
+*Another one* walks the ranked order without recomputing anything — predictable by design. Every tap is logged as an explicit rejection of that specific film **with its rank**, which is the only item-level channel the system has: choosing within a pair credits a direction, never a film. After five or six rejections the card admits confidence has run out rather than continuing to present guesses as recommendations.
+
+*I'll watch this* marks real acceptance. Nothing counts as accepted without it — the quiz also gets used for testing and for showing people, and without an explicit accept every session would look like a hit.
+
+The ranked order is **integral**: cluster diversity never displaces a high-confidence candidate. Eligibility (runtime, availability, identity) is a **mask applied before ranking**, never a filter after; metadata failure never excludes a candidate. Identity resolves through TMDb.
+
+**Two feedback channels, deliberately separate.** A post-film 👍/👎 asks *"was this the vibe I expected?"* — that evaluates the **engine**. Whether the film was any good goes to a ratings service, not to the quiz. Conflating them teaches the wrong thing: a great film delivered on the wrong night would score 👍.
+
+### Scope rule
+
+**The quiz screen is only this-or-that.** One pair, four buttons, repeat until stopping. Nothing else appears — no mid-session guess confirmation, no direction chips, no axis labels, no fifth answer. Anything that asks for explicit reasoning about attributes breaks the premise of reading preference below the level of articulation.
+
+One exception: a **duration question** at the start. That's declared context, not mood — and it's a *ceiling*, not a band.
 
 ---
 
@@ -156,6 +172,32 @@ The semantic reranking layer was promoted on 500 sessions showing +9.8 p.p. Then
 ### Shadow deployment that couldn't see
 
 The rollout plan was to run the new engine in shadow against the old one on real sessions. Structurally impossible: the new engine diverged from the legacy pair sequence at 12 of 12 pairs, so the shadow ran handcuffed — no adaptive selection, no fourth answer, no stopping, no pick. **Shadow deployment only works when the shadow can act.** For a system whose *questions* are its behavior, you need interleaving or A/B, not shadowing.
+
+### The engine was 0.05% of the wait
+
+For weeks the guiding principle was "zero AI inference during the quiz." It was true of the engine and **false of the transport**.
+
+One real round, measured wall-clock from button tap to next question on screen: **179.2 seconds.**
+
+| stage | time |
+|---|---:|
+| callback → agent awake | ~34.4 s |
+| agent awake → handler starts | ~16.1 s |
+| state loading and auxiliary commands | ~1.9 s |
+| **pair selection** | **28.6 ms** |
+| **media preparation** | **63.7 ms** |
+| Telegram API | 1.73 s |
+| LLM orchestration between commands | ~141 s |
+
+92 milliseconds of engine inside 179,200 milliseconds of waiting. The remaining 99.95% was an agent waking up, reading its own skill file, looking up a profile, checking `--help`, and deciding what to run — on every button tap.
+
+Every optimization done before this measurement — speculative prefetch of all four answers, vectorizing the information-gain computation, a 300 ms budget on pair selection — improved a component **three orders of magnitude smaller** than the actual bottleneck.
+
+The fix is architectural, not incremental: a resident process that loads the runtime once and keeps it in memory, a dedicated bot so the messaging path is isolated, posters cached permanently (probe films never change), and each pair's composed image uploaded once so subsequent rounds send a reusable ID instead of bytes.
+
+**None of the 850 synthetic sessions could have found this**, because in simulation there is no messaging layer and no agent. It took one real session.
+
+**Generalizable lesson: measure the end-to-end path before optimizing any component.** A CPU profile of your algorithm cannot see a bottleneck that lives in transport.
 
 ### The simulator's blind spot
 
