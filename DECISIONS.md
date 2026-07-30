@@ -698,20 +698,25 @@ this specific closed-loop mechanism is therefore unsupported. The metric
 remains an offline hidden-target proxy, so real `acceptance@1` and
 effort-to-accept are still the product arbiter.
 
-Production now alternates deterministically only in real use: odd real-session
-numbers use arm 3 terminal GPT-5 mini and even numbers use arm 2 semantic-60.
-The separate `alternate_arms` switch is on in the production unit. Measurement
-contexts turn it off and must set one arm explicitly, preserving comparable
-replays. The selected arm is logged with `acceptance@1`, effort-to-accept, and
-vibe; an arm comparison is emitted every ten accepted real sessions.
+Production alternated deterministically in real use until the first post-freeze
+session on 2026-07-30. In that session arm 3 moved Onibaba from semantic rank
+30 to terminal rank 1; Felipe judged the session “péssima.” Under the
+predeclared real-use arbiter, arm 3 was stopped. Production is now fixed to
+arm 2 semantic-60 with `MOVIES_QUIZ_ALTERNATE_ARMS=0` and
+`MOVIES_QUIZ_FIXED_ARM=arm2_semantic60`. Historical arm assignment,
+`acceptance@1`, effort-to-accept, and vibe remain logged; no new arm or
+experiment replaces it.
 
-Card explanation is a separate post-pick GPT-5 mini call. The selected arm
+Card explanation remains a separate post-pick GPT-5 mini call. The selected arm
 freezes the order first; the card is sent immediately with neutral copy and
 edited if the explanation arrives within 15 seconds. Timeout or failure keeps
 the neutral copy and is logged. Input is limited to the chosen film's title,
 year, director, genres, synopsis, and session answers—no axes, scores, or
-ratings. Recorded reranks and recorded explanations replay without calling a
-model.
+ratings. The same incident exposed an explanation-grounding bug: the stored
+answer correctly recorded `a` for The Drama versus X, but history sent only
+“escolheu A,” allowing the model to cite X. History now states the selected
+and rejected film titles explicitly. Recorded reranks and explanations replay
+without calling a model.
 
 Only after completion, the separate 4,096-pair staging pool was audited
 read-only. Its v4 clustering has 80 clusters, yielding 800 cluster × probing
