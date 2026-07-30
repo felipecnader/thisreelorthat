@@ -789,19 +789,26 @@ delivery fixed, and alternation off. The selection channel is real:
 496/500 targets diverged, with 10.62 different-pair rounds per target on
 average.
 
-That divergence did not establish a quality gain. β=0.70 produced
+That divergence did not establish a quality gain, but the test was
+underpowered for its primary rare-event metric. β=0.70 produced
 53/500 SC@3 = 10.6% [8.20%, 13.61%], median/mean target rank
 318/394.966; β=1.00 produced 64/500 = 12.8% [10.15%, 16.01%],
 median/mean rank 323.5/403.854. The paired SC@3 difference was +2.2 pp
 [−1.4, +5.6], and the paired median-rank improvement
 β0.70−β1.00 was −5.5 [−48.0, +42.5]. Neither preregistered quality
-criterion cleared noise.
+criterion cleared noise. Resolving an unpaired 10.6% versus 12.8% SC@3
+difference at 80% power would require approximately 3,343 sessions per arm,
+about seven times the sample that ran. The supported statement is therefore
+“not demonstrated in an underpowered test,” not “β=1.00 does not improve.”
 
-β=1.00 concentrated and stopped somewhat sooner but did not improve
-recommendation quality: mean final `exp(H)` 8.04 versus 15.56, mean stop
-round 13.086 versus 13.426, and ceiling rate 83.8% versus 88.8%.
-Mean `none` was 46.90% versus 51.21%. Production remains at β=0.70 and
-the β line is closed definitively. The live harness cost US$1.574458.
+β=1.00 concentrated and moved every operational metric in the favorable
+direction: mean final `exp(H)` 8.04 versus 15.56, mean stop round 13.086
+versus 13.426, ceiling rate 83.8% versus 88.8%, and mean `none` 46.90%
+versus 51.21%. These are candidate effects, not resolved effects. Production
+remains at β=0.70. The line may be reopened only with a powered design
+(roughly US$10.50 at the observed cost rate) and `none` preregistered as the
+primary metric; no further β sweep is authorized. The live harness cost
+US$1.574458.
 
 Evidence:
 `data/movies-quiz-v3-evaluation/beta-tempering-frozen-sweep-v1.json`,
@@ -809,3 +816,159 @@ Evidence:
 `data/movies-quiz-target-test-dataset/current-rules-replay-beta-070-revert-final-v1.json`,
 `data/movies-quiz-v3-evaluation/beta-live-eig-070-vs-100-v1.json`, and
 `data/movies-quiz-v3-evaluation/beta-live-eig-070-vs-100-v1.md`.
+
+### Level-1 representation diagnostics
+
+Three independent diagnostics located the current representation bottleneck
+without changing production.
+
+**Human similarity.** The priority Yao/Harper bitstream was inaccessible
+behind an Azure WAF challenge, so the public CC BY 4.0 MovieSim datasets were
+used. MovieSim-2 yielded 670 complete joined pairs across 339 catalog films:
+Spearman ρ was 0.299 [0.231, 0.370] for the weighted 12-axis space,
+0.383 [0.316, 0.447] for TMDB genre Jaccard, and
+0.417 [0.350, 0.479] for synopsis embedding cosine. MovieSim-1 independently
+replicated the ordering on 427 pairs: 0.485 [0.409, 0.555], 0.548
+[0.475, 0.614], and 0.615 [0.549, 0.676], respectively. Absolute correlations
+are protocol-dependent, but semantic embeddings led in both datasets and the
+12 axes fell below the preregistered 0.40 boundary on the primary dataset.
+The axes are weak as a standalone proxy for human movie similarity.
+
+**Seven-axis reduction.** The four correlated tone axes were merged by PCA;
+PC1 explained 80.80% of their variance. Clusters and all 1,000 trajectories
+were frozen. The reduced representation produced SC@3 11.30% versus 10.70%
+(paired +0.60 pp [−1.10, +2.30]), median rank 366 versus 366.5, and identical
+`none` by construction. It worsened mean rank to 423.021 from 414.025 and
+mean target log probability by −0.73561 [−1.00711, −0.46435]. Reduction did
+not earn promotion, but the test is inconclusive by construction rather than
+a clean rejection. Freezing 12-axis clusters holds the target definition in
+the full representation while asking the reduced representation to navigate
+without four of those coordinates. SC@3 nevertheless rose numerically. The
+current 12-axis representation stays until both geometries can be scored
+against the same external reference.
+
+**Frontier label audit.** A deterministic sample of 150 films covered all
+80 clusters and all 38 original languages in the catalog. One pass with
+`openai/gpt-5.6-sol` found overall mean absolute disagreement 0.116.
+Signed shifts were statistically nonzero but small on `heavy_light` −0.044,
+`intimate_epic` −0.028, `slow_propulsive` +0.040,
+`cerebral_emotional` +0.048, `gray_cathartic` −0.046, and
+`classic_contemporary` −0.046. `comic_serious` had the largest absolute
+disagreement (0.253) but no consistent signed bias. Correlation between
+absolute disagreement and current confidence was −0.145; the low-confidence
+quartile differed by 0.127 versus 0.108 for the high-confidence quartile.
+Confidence weakly captures disagreement but does not fully explain it.
+
+The premise that all current labels were three passes of the same mini was
+wrong: provenance shows a `sol/terra/sol` ensemble for 11 axes, with only
+`comic_serious` coming from mini. This is recorded as an error of premise,
+not a refuted hypothesis: the proposed test could not isolate mini bias on
+the other 11 axes because the assumed single-model provenance was false.
+The frontier audit remains useful as a cross-pass disagreement audit.
+`comic_serious` having the largest absolute disagreement is weak evidence in
+the expected direction for the only single-model axis, not proof of bias.
+The frontier audit completed with zero reported billed cost.
+
+Evidence:
+`data/movies-quiz-v3-evaluation/human-similarity-benchmark-v1.json`,
+`data/movies-quiz-v3-evaluation/human-similarity-benchmark-v1.md`,
+`data/movies-quiz-v3-evaluation/seven-probing-axis-frozen-replay-v1.json`,
+`data/movies-quiz-v3-evaluation/seven-probing-axis-frozen-replay-v1.md`,
+`data/movies-quiz-v3-evaluation/frontier-label-audit-v1.json`, and
+`data/movies-quiz-v3-evaluation/frontier-label-audit-v1.md`.
+
+### Post-diagnostic representation actions
+
+**External cluster alignment.** Four K=80 partitions were scored against
+MovieSim pair labels. On MovieSim-2, accuracy/precision/recall for
+same-cluster were 43.1%/87.4%/19.7% for current 12-axis clusters,
+44.6%/87.2%/22.3% for reduced 7-axis clusters,
+55.7%/87.4%/41.0% for synopsis-embedding clusters, and
+51.2%/88.3%/33.0% for genre clusters. MovieSim-1 replicated the main result:
+62.3%/83.3%/24.9%, 61.4%/81.0%/23.4%,
+69.3%/80.7%/45.8%, and 68.6%/90.4%/37.3%, respectively.
+
+Embedding versus current 12-axis accuracy improved by +12.5 pp
+[+8.4, +16.7] on MovieSim-2 and +7.0 pp [+2.1, +11.7] on MovieSim-1.
+The gain came from recall while precision remained similar. Excluding tied
+human judgments preserved the ordering. The 7-axis partition did not
+establish equivalence or superiority to 12 axes: +1.5 pp
+[−1.5, +4.5] on MovieSim-2 and −0.9 pp [−4.4, +2.6] on MovieSim-1.
+
+This is evidence that embedding geometry is a better external target
+structure for human movie similarity. It does not show that axes are useless:
+similarity judgments and tonight-mood are adjacent but different constructs,
+and axes remain the legible mechanism that generates questions. It does show
+that SC@3, whose target clusters are built from the weakest standalone
+similarity signal, is not a neutral product-quality metric. Moving target
+clusters to embedding space is a major architectural candidate and is not
+implemented from this diagnostic alone.
+
+**Human-fitted multisignal rerank.** A Ridge model was fit only on MovieSim-1
+(N=427), with α=17.7828 selected by ten-fold cross-validation inside that
+training dataset. Standardized weights were +0.07749 for axis similarity,
++0.11902 for genre Jaccard, and +0.17223 for embedding cosine. Spearman ρ was
+0.6846 on training and 0.4790 on held-out MovieSim-2, above 0.4173 for
+embedding alone.
+
+On the 1,000 frozen trajectories, the current small-embedding semantic rerank
+exactly reproduced SC@3 10.7% and mean rank 414.025. A fair large-embedding
+comparator reached 12.1% and 413.916; the large-embedding combined model
+reached 12.6% and 413.698. Combined versus large embedding alone was
++0.5 pp SC@3 [−1.1, +2.1] and +0.218 mean-rank positions
+[0.000, +0.442]. Against current small embedding it was +1.9 pp
+[+0.1, +3.8], but that comparison confounds signal combination with the
+small-to-large embedding change. The literal two-gate criterion was met
+(external ρ and replay SC@3 both rose), but the incremental gain from adding
+axes and genre over the fair embedding comparator was not resolved.
+No production promotion is authorized.
+
+**`comic_serious` ensemble relabel.** All 1,497 films were relabeled only on
+this axis with the same `gpt-5.6-sol / gpt-5.6-terra / gpt-5.6-sol` ensemble
+procedure used by the other labels. Old versus new values had Pearson
+0.8376, Spearman 0.8275, and mean absolute difference 0.2352. On the frozen
+1,000-session replay, SC@3 moved from 10.7% to 11.1%, median/mean target rank
+from 366.5/414.025 to 350.5/403.878, and `none` remained 60.4011% by
+construction. These favorable offline movements are recorded as candidates;
+the new axis was not promoted and production labels were not changed.
+
+The relabel used 502,674 input and 87,200 output tokens including the schema
+smoke. Actual billed USD could not be verified: the Responses API did not
+return a charge and the credential lacked `api.usage.read`; no zero-cost
+claim is made.
+
+Evidence:
+`data/movies-quiz-v3-evaluation/cluster-human-alignment-v1.json`,
+`data/movies-quiz-v3-evaluation/cluster-human-alignment-v1.md`,
+`data/movies-quiz-v3-evaluation/multisignal-human-ridge-rerank-v1.json`,
+`data/movies-quiz-v3-evaluation/multisignal-human-ridge-rerank-v1.md`,
+`data/movies-quiz-v3-evaluation/comic-serious-ensemble-relabel-v2.json`,
+`data/movies-quiz-v3-evaluation/comic-serious-ensemble-relabel-v2.md`,
+`data/movies-quiz-v3-evaluation/comic-serious-ensemble-frozen-replay-v2.json`,
+and
+`data/movies-quiz-v3-evaluation/comic-serious-ensemble-frozen-replay-v2.md`.
+
+### Independent literature alignment
+
+Marjieh et al., *Words are all you need?* (ICLR 2023,
+[arXiv:2206.04105](https://arxiv.org/abs/2206.04105)), compared 611
+pretrained image, audio, and video models with human similarity judgments.
+Language-based methods outperformed the modality-only representations, and
+stacking language embeddings with pretrained-model embeddings consistently
+performed best across all three modalities. This independently supports the
+architecture class used here: an LLM-labeled posterior followed by synopsis
+embedding reranking. Internally, that stack is also the strongest powered
+effect: semantic-60 over pure posterior was +5.20 pp
+[+3.40, +7.10]. The paper supports the architecture class, not the specific
+film labels or causal interpretation of this harness.
+
+Sun et al., *Large Language Models as Conversational Movie Recommenders: A
+User Study* (2024, [arXiv:2404.19093](https://arxiv.org/abs/2404.19093)),
+studied 160 active users. LLM recommendations were strongly explainable but
+lagged traditional recommenders in personalization, diversity, and trust;
+zero-, one-, and few-shot prompting did not significantly change perceived
+recommendation quality. That independently matches the reason for retaining
+the terminal LLM only as an alternating real-use arm rather than assuming
+prompt mitigation settles ranking quality. The local arm-3 deficit of
+−2.70 pp [−4.80, −0.70] remains subject to its documented representation
+confound.
