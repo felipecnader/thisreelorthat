@@ -1038,3 +1038,64 @@ the terminal LLM only as an alternating real-use arm rather than assuming
 prompt mitigation settles ranking quality. The local arm-3 deficit of
 −2.70 pp [−4.80, −0.70] remains subject to its documented representation
 confound.
+
+## 2026-07-30 — Real-use operational repair after six sessions
+
+Six consecutive real sessions exposed a product failure despite occasional
+acceptable picks: 82 rounds contained 25 repeated pairs, only 98/282 probes
+were seen, and `none` was 40/82 = 48.8%. Felipe explicitly rated four of the
+six experiences as poor and reported that the quiz did not let him express
+what he wanted. This falls under the operational-failure exception to the
+optimization freeze.
+
+The refused-region and repeated-dominant-axis stages, previously measured only
+counterfactually, are now active in real selection. Each `none` stores the
+shared pair midpoint; later pair midpoints within RMS 0.75 are excluded.
+If the pool would be stranded, the threshold relaxes conservatively through
+0.60, 0.45, and 0.30 rather than silently disabling the mechanism. A pair
+whose dominant axis matches either of the two previous rounds is also
+excluded, with fail-open only if no valid axis remains. Both decisions and
+any relaxation are logged on the selected pair.
+
+The blind-validated refined identity rule passed 29/30 = 96.67% on the second
+holdout and its coarse pool is promoted. Production runtime v5 contains
+4,096 pairs, covers 278 probes and 583 cluster regions, uses the 10% EIG band
+and the calibrated 50%-of-best A/B-channel floor. The identity filter applies
+only in coarse. Fine selection constructs every unused within-region pair, so
+same-family pairs remain available when they can discriminate a localized
+mood.
+
+Cross-session reuse is a soft, temporally decayed factor, not a veto. Prior
+real-session exposure decays with a three-day half-life and enters only
+inside the EIG-qualified set with coefficient 0.35. In a zero-API,
+ten-consecutive-session deterministic harness it increased distinct probes
+from 157 to 171 while preserving 28 distinct probes per 14-round session.
+
+The opening repetition was not a broken hash and was unrelated to duration.
+The old 3% band had 52 admissible pairs but only three within-band pairs; the
+same pair won three independent draws. Production now uses a 10% band and
+guarantees at least ten candidates at round one. Across the 82 frozen real
+states, the active-filter final candidate set had median 6, minimum 1, and
+zero stranded states.
+
+Alternation is restored using the persisted real-session counter. The apparent
+five-session failure to alternate was configuration, not counter corruption:
+arm3 had been deliberately disabled after the first bad session. The next
+odd real session returns to arm3, followed by arm2 on the next even session.
+Measurement contexts continue to require an explicit fixed arm.
+
+The explanation input names the selected and rejected film explicitly. The
+regression fixture `The Drama × X → A` asserts that history says
+“escolheu explicitamente The Drama; rejeitou X”, preventing the observed
+inversion from recurring.
+
+The sole arm3 real-use observation remains qualitatively adverse: its terminal
+LLM moved *Onibaba* from semantic rank 30 to rank 1, after which Felipe
+rejected it. This is consistent with the harness deficit of −2.70 pp, but arm3
+remains in alternation at Felipe's explicit request for more real evidence.
+
+Evidence:
+`data/movies-quiz-v3-evaluation/real-session-log-2026-07-30.md`,
+`data/movies-quiz-v3-evaluation/legibility-holdout-results-v2.json`,
+`data/movies-quiz-v3-evaluation/legible-pool-production-v2.json`, and
+`data/movies-quiz-v3-evaluation/operational-fixes-2026-07-30.json`.
