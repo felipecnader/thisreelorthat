@@ -923,14 +923,47 @@ small-to-large embedding change. The literal two-gate criterion was met
 axes and genre over the fair embedding comparator was not resolved.
 No production promotion is authorized.
 
+**Isolated embedding-model comparison.** The confounded historical decision
+for `text-embedding-3-small` was rechecked on the 1,000 frozen, leakage-free
+trajectories with the rerank held pure and window fixed at 60. `large`
+produced 121/1,000 SC@3 = 12.1% versus 107/1,000 = 10.7% for `small`;
+the paired difference was +1.4 pp with 95% bootstrap interval
+[−0.2, +3.1]. Median rank was identical at 366.5 and mean rank improved by
+only 0.109 [−0.152, +0.382]. `none` was identical by construction. The point
+estimate favors `large`, but the preregistered interval-excludes-zero gate did
+not pass, so no window sweep or automatic promotion occurred. Generating the
+1,497-film large corpus used 384,626 input tokens and cost US$0.05000138;
+the original generation latency was not recorded and is not estimated.
+
+**Cluster-size artifact audit.** Embedding clusters are somewhat more unequal
+than current axis clusters, but not enough to explain the external-alignment
+gain mechanically: Gini was 0.305 versus 0.268, standard deviation 10.35
+versus 9.17, maximum 53 versus 51, and the five largest clusters held 14.56%
+versus 13.23% of the catalog. Genre clustering was far more unequal
+(Gini 0.557; maximum 190). The embedding alignment result therefore survives
+the size-distribution audit, with modest imbalance retained as a caveat.
+
+**Axis predictability of embedding clusters.** On the 1,215 recommendation
+candidates, a fixed 5-NN classifier using the weighted 12-axis coordinates
+predicted held-out K=80 embedding-cluster identity with 5-fold stratified
+accuracy 18.8%, versus 4.4% for always predicting the largest cluster
+(+14.5 pp; 4.32×). Thus the axes contain substantial information about
+embedding-cluster membership and the proposed hybrid architecture is
+operationally plausible. This is a predictability proxy, not a direct
+mutual-information estimate or proof that live EIG remains useful; no target
+geometry was changed.
+
 **`comic_serious` ensemble relabel.** All 1,497 films were relabeled only on
 this axis with the same `gpt-5.6-sol / gpt-5.6-terra / gpt-5.6-sol` ensemble
 procedure used by the other labels. Old versus new values had Pearson
 0.8376, Spearman 0.8275, and mean absolute difference 0.2352. On the frozen
 1,000-session replay, SC@3 moved from 10.7% to 11.1%, median/mean target rank
 from 366.5/414.025 to 350.5/403.878, and `none` remained 60.4011% by
-construction. These favorable offline movements are recorded as candidates;
-the new axis was not promoted and production labels were not changed.
+construction. These favorable offline movements support the consistency
+decision. The new axis was promoted on 2026-07-30 because it removes the only
+single-model exception from the labeling pipeline; the metric movement is
+directional support, not a claim of statistical significance. No other axis,
+inference parameter, or production arm changed.
 
 The relabel used 502,674 input and 87,200 output tokens including the schema
 smoke. Actual billed USD could not be verified: the Responses API did not
@@ -942,6 +975,8 @@ Evidence:
 `data/movies-quiz-v3-evaluation/cluster-human-alignment-v1.md`,
 `data/movies-quiz-v3-evaluation/multisignal-human-ridge-rerank-v1.json`,
 `data/movies-quiz-v3-evaluation/multisignal-human-ridge-rerank-v1.md`,
+`data/movies-quiz-v3-evaluation/axis-to-embedding-cluster-predictability-v1.json`,
+`data/movies-quiz-v3-evaluation/axis-to-embedding-cluster-predictability-v1.md`,
 `data/movies-quiz-v3-evaluation/comic-serious-ensemble-relabel-v2.json`,
 `data/movies-quiz-v3-evaluation/comic-serious-ensemble-relabel-v2.md`,
 `data/movies-quiz-v3-evaluation/comic-serious-ensemble-frozen-replay-v2.json`,
