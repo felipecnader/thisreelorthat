@@ -1,240 +1,811 @@
-# DECISIONS.md — ThisReelOrThat
+# Product decisions
 
-Registro do que está no ar, do que foi rejeitado e por quê. Escrito para ser lido em três meses por alguém que não viveu as decisões — incluindo você mesmo.
+## Movie quiz interface
 
-Convenção: **ATIVO** roda em produção. **REJEITADO** foi testado e reprovado. **PENDENTE** está na fila. Cada rejeição diz o que mediu e por que caiu, porque a lição está aí.
+The quiz is exclusively a sequence of this-or-that questions. After the
+declared-duration question, every interactive screen contains one film pair
+and exactly four answers: A, B, either works, and neither fits.
 
----
+The duration question remains because it is declared viewing context, not a
+mood or an attribute-analysis prompt.
 
-## 1. Configuração ativa
+### Rejected interface mechanisms
 
-| componente | valor |
-|---|---|
-| Pool de pares | `old_pool_v2` (estratificado, quota por eixo) |
-| Gate de sonda cega | **desligado** |
-| Variedade | banda de 3% + hash de sessão |
-| Geometria | `reality-split v3` (12 eixos) |
-| Blocklist de probes | ativa (aplicada antes do cálculo de contraste) |
-| Rerank semântico | `text-embedding-3-small` + `endorsed_minus_none` + janela 60 — **evidência fraca, ver §5** |
-| Clusters | K = 80, mediana 15 filmes, piso `exp(H)` = 16,67 |
-
-Catálogos: 282 probes (assistidos, incluindo séries) · 1.215 candidatos (não assistidos).
-
-Contextos privados adicionais (listas pessoais) rodam fora do repositório — ver §10.
-
----
-
-## 2. Rotulagem — a camada que mais importou
-
-**A auditoria de rótulos foi a única intervenção com efeito grande e replicado: mediana da suíte de 30 → 7.** Todas as tentativas de melhorar o motor por mecanismo falharam; melhorar os dados funcionou.
-
-ATIVO:
-
-- **12 eixos.** Os 11 originais + a divisão de `realistic_fantastic` em `literal_impossibility` (o mundo contém algo impossível?) e `subjective_unreality` (a narração é confiável?). Correlação entre os dois: r = 0,154 — dimensões independentes.
-- **3 passadas por filme, mediana por eixo.** Confiança = discordância entre passadas.
-- **Fatos vêm do TMDB, não do LLM:** idioma, animação, ano. Erros como *Pan's Labyrinth* rotulado anglófono são falha de recall, não de julgamento.
-- **Ancoragem em texto:** sinopse + review, não memória paramétrica.
-- **15 controles re-inferidos em todo lote.** Gates: deriva média > 0,08 ou eixo único > 0,15 reprova o lote.
-- **Gate de correlação para eixo novo:** |r| ≥ 0,85 contra dimensão de probing existente → o eixo fica como label de matching e nunca ganha pergunta.
-- **Pesos:** idioma **0**, animação **0,2**, resto cheio. Motivo em §4.
-- **Fusão peso↔catarse apenas no probing;** separados no matching, porque a variância residual é real (*Life Is Beautiful*, *Seven Samurai*: pesados no conteúdo, catárticos na resolução).
-
-O campo de confiança auto-reportado da rotulagem antiga era **vacuoso**: média 0,939, e todos os erros encontrados tinham confiança 0,96–0,99. Discordância entre passadas é o único sinal de confiança que funciona.
-
----
-
-## 3. Quiz — respostas, parada, entrega
-
-ATIVO:
-
-- **Quatro respostas:** A, B, "qualquer um serve", "nenhum me atrai". Nada além disso.
-- **Likelihood:** κ = 3,5 · teto de evidência 1,25 · σ_tie 0,55 · força do "nenhum" 2,0 / bias 0,15.
-- **Reponderação suave, nunca eliminação dura.**
-- **Coarse até localizar** (top-1 ≥ 0,45 ou top-3 ≥ 0,70 com consistência afirmativa), depois fine intra-região (`legível E ambos na região`).
-- **Mínimo 5 rodadas, teto 10 + min(nenhum, 4).**
-- **Parada:** top-3 ≥ 0,75 e `exp(H)/piso ≤ 2,0`. ⚠️ Em validação sintética de escala real, a parada disparou em 3 de 50 sessões — 94% bateram o teto. Ver §6.
-- **Guarda de evidência afirmativa:** pick simples exige ≥3 respostas A/B e A/B ≥ "nenhum"; caso contrário sai pick duplo por polos com baixa confiança.
-- **Entrega: um pick, não shortlist.** `argmax` do posterior após máscara de elegibilidade, dedupe de franquia e rerank semântico. Botões `[me dá outro]` e `[vou assistir]`.
-  - `me dá outro` anda na ordem ranqueada (2º, 3º, 4º...) sem recalcular posterior nem mudar de região. Cada toque é logado como **rejeição explícita** daquele filme, com a posição — é o único canal de item que o sistema tem.
-  - Após ~5-6 recusas o card avisa que a confiança caiu. Não bloqueia.
-  - `vou assistir` marca aceitação real. Sem esse toque nada conta como aceito — o quiz também é usado pra testar e pra demonstrar.
-  - A ordem ranqueada é **íntegra**: diversidade de cluster nunca desaloja candidato de alta confiança.
-- **Elegibilidade é máscara ANTES do ranqueamento.** Nunca filtro depois. Isso morde duas vezes na história do projeto (duração e disponibilidade).
-- **Identidade por TMDB.** Serviços de match por título entram só como enriquecimento pós-pick; falha de match nunca exclui candidato.
-- **Dois canais de feedback, deliberadamente separados.** `vibe` (👍/👎: "era a vibe que eu esperava?") avalia o **motor**. Nota/review no Letterboxd avalia o **filme**. Misturar os dois ensina errado — filme ótimo entregue na noite errada levaria 👍.
-- **Lembrete de log:** ao aceitar um pick, agenda um lembrete único para duração + 30 min, com botão `[já loguei]`. Review mandado na conversa é gatilho suficiente.
-- **Gosto estável como mistura de 2 clusters.** Média de vetores perde até para prior uniforme quando o gosto é bimodal (−7,17 vs −7,10 vs −5,22 em log-prob).
-
----
-
-### Regra de escopo do quiz
-
-**A tela do quiz é só isso-ou-aquilo.** Um par, quatro botões, repete até a parada. Nada além disso entra: nem palpite corrigível, nem chips de direção, nem legenda de eixo, nem quinta resposta. Qualquer elemento que peça raciocínio explícito sobre atributos quebra a premissa de ler vontade do subconsciente, e já está vetado por princípio.
-
-Única exceção: a **pergunta de duração** no início. É contexto declarado, não mood. E é **teto**, não faixa — "tenho 150 minutos" significa qualquer filme até 150.
-
-### Métrica de produto
-
-**Posição do pick aceito.** Por sessão, em que posição do ranking estava o filme aceito com `vou assistir` (1 = acertou de primeira). É avaliação de ranqueamento com ground truth real, saindo do uso normal, sem protocolo.
-
-`SC@3` (célula certa no top-3) foi a métrica durante a fase de validação sintética e **deixou de ser métrica de produto** quando a entrega virou pick único.
-
----
-
-## 4. Achados que sustentam o desenho
-
-**"Nenhum" protege o posterior — efeito mais forte medido no projeto.** Braço `forced_choice` (n=50): mediana de posição 45 e média 77, contra 31,5 e 40 do baseline. Mecanismo: quando o par é ruim, escolher à força injeta direção confundida; recusar apenas suprime. Corroborado em sessões humanas (0 "nenhum" → 252º; 3 "nenhum" → pick nº 1).
-
-**Flags binárias não são eixos de mood.** 99,7% dos filmes ficam em \|v\|>0,8 em animação e 99,1% em idioma (bimodalidade de Sarle 0,995 e 0,993). Um par misto contrasta 2,96σ em idioma contra 1,0–1,4σ dos eixos reais — a flag sempre domina. Pior: com os 12 eixos crus, **100% dos clusters eram >90% puros em idioma** e nenhum cluster tinha mood atravessando animação. Os clusters eram ~9 células de mood repetidas em 4 quadrantes, e um crédito espúrio trancava o posterior no quadrante errado.
-
-**Pureza de eixo é impossível no bloco de tom.** `heavy_light × gray_cathartic` = +0,90; heavy × demanding = +0,78; gray × demanding = +0,76; heavy × comic = −0,72. Filme que difere em peso também difere em catarse — é estrutura do cinema, não lacuna de catálogo. Exigir pureza reprova sempre nesses eixos (7 a 11 pares puros em ~80 mil).
-
-**O crédito por rodada é descorrelacionado da razão da escolha.** Concordância entre motivo declarado e eixo creditado: 9,5%, com baseline aleatório de 10,3% (n=1.952 rodadas). Isso é o teto do formato e explica as oito refutações de §5 de uma vez: não há sinal de razão para recuperar.
-
-**Cobertura tem que ser objetivo, não piso.** O invariante exigia ≥32 pares por eixo; o otimizador cumpriu o mínimo e gastou o resto do pool em outra coisa. Resultado: 8 de 10 eixos perderam cobertura do v2 pro v3 (`subjective_unreality` 226 → 45). Foi por isso que o pool "melhorado" piorou o motor.
-
----
-
-## 5. Transporte — a lição mais transferível do projeto
-
-Durante semanas a premissa foi "zero inferência de IA no quiz". Ela valia pro motor e era **falsa pro transporte**.
-
-Medição de uma rodada real, do toque no botão até a próxima pergunta na tela: **179,2 segundos**.
-
-| etapa | tempo |
-|---|---:|
-| callback → agente desperto | ~34,4 s |
-| agente desperto → handler começar | ~16,1 s |
-| leitura de estado e comandos auxiliares | ~1,9 s |
-| **seleção do par** | **28,6 ms** |
-| **preparação de mídia** | **63,7 ms** |
-| API do Telegram | 1,73 s |
-| LLM/orquestração entre comandos | ~141 s |
-
-**O motor é 0,05% da espera.** 92 ms de 179.200 ms. Os outros 99,95% eram o agente acordando, lendo skill, procurando perfil, consultando `--help` e decidindo o que executar — a cada toque de botão.
-
-Todo o trabalho de otimização feito antes disso (prefetch especulativo das 4 respostas, vetorização do EIG, orçamento de 300 ms na seleção do par) melhorou um componente **três ordens de magnitude menor** que o gargalo real.
-
-**Nenhuma das 850 sessões sintéticas podia achar isso**, porque nelas não existe Telegram nem agente. Foi achado em uma sessão de uso.
-
-### Arquitetura correta
-
-`callback do Telegram → serviço residente → estado em memória → likelihood/seleção → imagem em disco → Telegram`
-
-- **Processo residente** (systemd user service): carrega o runtime uma vez no startup, mantém em memória, persiste estado a cada resposta.
-- **Bot dedicado** só pro quiz, isolando o raio de falha da mensageria principal.
-- **Zero LLM por rodada.** O agente entra em duas pontas apenas: warming (offline) e card final se houver pedido de análise.
-- **Cache permanente dos pôsteres dos probes.** Os pares só usam os assistidos, sempre os mesmos filmes — baixa uma vez, nunca mais busca em runtime.
-- **Pré-composição com `file_id`.** As imagens "A vs B" de cada par do pool são compostas e enviadas uma vez; o Telegram devolve um `file_id` reutilizável. Depois disso enviar uma rodada é uma chamada com um ID, sem upload. Invalidado por hash do runtime ou troca de bot.
-
-Critério de aceite: p50 < 500 ms do toque até a pergunta na tela, p99 < 2 s.
-
-**Lição geral: meça o caminho ponta a ponta antes de otimizar qualquer componente.** Perfil de CPU do algoritmo não vê o gargalo se ele mora no transporte.
-
----
-
-## 6. Rejeitados
-
-### Vetados pelo dono do produto (não voltam)
-
-Conjuntos de 3 filmes por lado · legenda de eixo no par · tríades · perguntas de rejeição ("qual você NÃO quer") · quinta resposta ("não lembro desses") · **palpite corrigível** · **shortlist de 3**.
-
-Notas sobre os dois últimos: o **palpite corrigível** ("tá parecendo noite de X — é isso?" com atalhos de direção) chegou a ser implementado e foi **removido do runtime**, não apenas desativado. Ele disparava após 6 rodadas sem localizar e substituía a rodada — mas os botões eram vocabulário de rubrica com outro nome ("mais acelerado" = `slow_propulsive`), exatamente o que a legenda de eixo tinha de errado. A **shortlist de 3** foi proposta do lado de design, nunca pedido do produto; virou pick único.
-
-Razão comum: o quiz existe para ler vontade do subconsciente. Nomear o eixo ou pedir raciocínio explícito empurra para o modo consciente e destrói a premissa.
-
-### Refutados por teste
-
-| ideia | o que mediu | resultado |
-|---|---|---|
-| Árvore de decisão pré-computada | latência | seleção local é sub-milissegundo; congelaria política não calibrada |
-| Pureza no update | acerto na persona "razão confundida" | 57,4% → 57,4% |
-| Corroboração leave-one-out | fragilidade da parada | marcou 100% das sessões como frágeis — a régua media a si mesma |
-| Atribuição mascarada | deriva de eixo | piorou: −1,420 → −1,594 |
-| Bônus de endosso RBF | posição do alvo | fraco e instável em todos os β |
-| Whitening / Mahalanobis | acerto agregado | Demon Slayer 1 → 37; melhorou 4, piorou 5 |
-| Eixo congelado por região | posição do alvo | Dark Knight 164 → 229 |
-| Atenuação de crédito incidental | curva 1,0/0,5/0,3/0,0 | monótona piorando — crédito incidental é ruidoso mas útil |
-| Catraca do termo `att` em A/B | posição do alvo | 178 → 178 |
-| Janela semântica por `exp(H)` | lift por múltiplo | lift pequeno em toda a faixa; unidade errada |
-| Cobertura entre catálogos | distância probe↔candidato | 0 de 1.215 candidatos além de 1σ; distância não prevê falha |
-| Filtro intra-célula universal | "nenhum" intra vs cross | 33,8% vs 22,2%, pegou 3 de 4 casos — sinal fraco |
-| Fine só no fechamento | acerto exato | 44% contra 64% do fine intercalado |
-
-### Sob suspeita, ativo por ora
-
-**Rerank semântico.** Promovido com base em 500 sessões que tinham **vazamento**: em 103 delas o alvo aparecia como probe e podia ser endossado — canal que produção não tem. Nas 397 sessões limpas, top-30 cai de 47,0% para 38,3%, apenas 1,05x o aleatório pareado, e alvo@3 fica indistinguível de aleatório. Em escala de produção dá 2,34x, mas isso são 4 sessões contra 2, e alvo@3 vai de 4% para **0%** — a camada acerta mais a célula e afunda o filme exato, que é o viés de familiaridade previsto.
-
-Gatilho de desativação: o primeiro sinal real de recomendações previsíveis ou "mais do mesmo" no uso.
-
----
-
-## 7. Limitações conhecidas
-
-**Resolução do instrumento: ~top 10%.** Medido cinco vezes de forma independente. Com 282 candidatos, o alvo aterrissa consistentemente entre a 16ª e a 39ª posição. Isso é piso de entropia, não falta de calibração: filmes com vetores quase idênticos são indistinguíveis por qualquer sequência de respostas. **Perseguir top-1 é perda de tempo** — o produto entrega célula de mood, não filme exato.
-
-**Validação em escala de produção é ruim.** Posterior faz 1,17x aleatório com K=80; gosto estável **sem quiz** faz 1,76x. As diferenças são de uma ou duas sessões em N=50, então nada é conclusivo — mas o quiz não demonstrou pagar o próprio custo de interação em escala real.
-
-**Ressalva sobre esse resultado:** em produção **não existe alvo**. Todo o framework mediu recuperação de um filme específico escondido; o produto entrega três filmes para uma vontade difusa. O 1,17x pode ser falha real ou métrica errada, e nenhum teste offline distingue as duas.
-
-**Parada quase nunca dispara em escala real.** 47 de 50 sessões bateram o teto com K=80. Nenhum limiar testado resolveu (K=43 deu 92% de teto). O gate de confiança raramente morde.
-
-**SC@3 não é comparável entre catálogos.** Depende do número de clusters: aleatório dá 30,5% no NYT (9 clusters), 40,6% no target-test (~18) e 3,41% em produção (80). Métrica oficial passa a ser **razão sobre aleatório** e **lift normalizado** `(obs − rand)/(1 − rand)`. Todo número absoluto histórico comparado entre contextos está inválido.
-
-**O simulador não mede legibilidade.** As personas respondem pela mesma likelihood do motor, então uma sonda cega produz resposta auto-consistente e não reproduz o envenenamento humano por escolha forçada. Nenhum dos 10 braços da campanha sabe que existe pergunta irrespondível — o respondente automático aperta "nenhum" e segue; o humano abandona a sessão.
-
-**Calibração do respondente automático: 75,4%.** Valida comparação entre braços (viés constante se cancela), não números absolutos. Uma em quatro respostas difere do humano, ~3 por sessão.
-
-**Regiões singleton.** O catálogo tem gêneros com n≈1 (documentário: praticamente só *Jiro Dreams of Sushi*). Inferência nessas regiões é sem sentido — "mesma célula" não existe com um filme.
-
----
-
-## 8. Pendente
-
-1. **Cobertura como objetivo na função de build do pool** (não como piso de 32). Dormente: o v2 ativo já tem cobertura boa; só importa se alguém reconstruir o pool.
-2. **Auditoria manual dos rótulos** — 7 filmes de confiança baixa remanescentes (3 em `gray_cathartic`) + 2 eixos divergentes de *Funeral Parade of Roses* (`slow_propulsive`, `classic_contemporary`).
-3. **Revisão de rubrica de `gray_cathartic`** — 3 de 7 casos incertos concentrados nele.
-4. **Serviço residente** — núcleo construído, aguardando token do bot dedicado, warming dos `file_id` e medição real de p50/p99. Até então o transporte segue passando pelo agente.
-5. **Bug aberto: piso de entropia obsoleto sob máscara.** O piso é calculado no build do catálogo cheio, mas as máscaras (duração, disponibilidade, blocklist) encolhem o conjunto elegível sem atualizar o piso. Como a parada divide por ele, ela dispara **prematuramente** em qualquer sessão com filtro. O fix é recalcular piso e δ no início da sessão sobre o conjunto elegível real. Não medido, não corrigido — sintoma observável: parar em 5-6 rodadas e entregar pick ruim.
-6. **Logging automático no Letterboxd** — o Letterboxd não tem API pública de escrita. Caminho ainda não definido (automação de navegador ou import CSV). Até então, lembrete com botão `[já loguei]` e log manual.
-7. **Feedback de vibe e posição do pick aceito** — acumulando com o uso. São as duas únicas fontes de verdade que existem; nenhuma análise offline substitui.
-
----
-
-## 9. Lição de método
-
-Oito hipóteses de mecanismo foram refutadas por ablação. A única intervenção com efeito grande e replicado veio de **verificação empírica direta** — auditar 12 filmes conhecidos na mão e achar 4 rótulos indefensáveis.
-
-Narrativa causal convincente não sobreviveu ao teste; conferir os dados sobreviveu.
-
-E o instrumento que achou mais bugs reais não foi o simulador de 500 sessões — foram sessões humanas isoladas. A sessão com 64% de "nenhum" gerou a reconstrução do pool. O 252º de *Sound of Metal* gerou o gate de sonda cega. Uma reação de "esse filme não tem nada a ver" identificou um caso que os vetores confirmaram depois.
-
----
-
-## 10. Contextos múltiplos — restringir a um catálogo específico
-
-O motor é agnóstico de catálogo: o posterior roda sobre qualquer conjunto de candidatos rotulado, e os probes continuam sendo os assistidos. Isso permite criar um **contexto** que responde apenas dentro de uma lista escolhida — uma lista de melhores do ano, uma seleção de festival, filmes de um diretor, o que for.
-
-No repositório entra o **mecanismo**, não listas específicas. Quem usa cria os próprios contextos via agente/pipeline.
-
-O que um contexto novo exige (nada disso transfere do contexto principal):
-
-1. **Rotulagem dos filmes da lista** na rubrica atual — 12 eixos, 3 passadas, mesmos controles, fatos vindos do TMDB. Filmes já presentes no catálogo principal reaproveitam o rótulo.
-2. **Runtime próprio:** candidatos reestandardizados, K próprio, piso `exp(H)` e δ próprios.
-3. **Limiares de parada recalibrados.** Isto é o que mais quebra: catálogo pequeno é regime completamente diferente.
-4. **Validação antes de publicar**, com dois baselines obrigatórios.
-
-### Três armadilhas medidas na prática
-
-**Limiar impossível.** Um critério de parada expresso como número absoluto de candidatos efetivos pode ficar **abaixo do piso de entropia** do catálogo — e aí nunca dispara. Aconteceu: piso 7,03 com limiar de 4,0. Sintomas: 40% das sessões no teto, e um sweep de sete valores de limiar retornando resultado idêntico em todas as linhas. **Limiar sempre como múltiplo do piso, nunca absoluto.**
-
-**Teto de rodadas desproporcional.** Com 50 candidatos e piso ~7, o instrumento não distingue melhor que ~7 filmes. Gastar 14 rodadas nisso é desperdício — teto 8 basta.
-
-**Rerank semântico pode não ajudar em catálogo pequeno.** Num contexto de 50 filmes, o rerank deu 48% de mesmo-cluster contra 48,7% do aleatório pareado dentro da mesma janela: nada. Testar por contexto, não assumir.
-
-### Os dois baselines que decidem
-
-- **Aleatório do catálogo inteiro.** Se o posterior não bate 3 filmes sorteados do catálogo, o quiz não está fazendo nada. (No contexto de 50: posterior 44% contra 30,5% aleatório, e alvo no top-3 12% contra 6,1% — o quiz funciona.)
-- **Aleatório dentro da janela do rerank.** Decide se a camada semântica entra ou não naquele contexto.
-
-Conclusão de produto que vale generalizar: **quiz vale a pena em catálogo pequeno, rerank semântico não necessariamente.** Publica sem rerank quando ele não bater o aleatório pareado.
+- correctable guess;
+- axis labels or axis captions;
+- sets of three;
+- triads;
+- rejection questions;
+- a fifth answer.
+
+These mechanisms are rejected by product decision, not deferred. The quiz
+exists to read subconscious preference. Any interface element that asks the
+viewer to reason explicitly about attributes breaks that purpose.
+
+### Scope rule
+
+No new interface element may be added to the quiz. Future proposals for chips,
+labels, explanatory prompts, additional answers, or other interaction types
+are vetoed by this principle. Changes may improve transport and reliability,
+but the visible quiz remains duration followed only by repeated four-answer
+film pairs until the existing stopping rule.
+
+The final recommendation card is delivery after the quiz, not an additional
+elicitation screen, and may contain only the product actions defined below.
+
+### Final pick delivery
+
+The three-film shortlist is removed. It was an implementation proposal, not a
+product requirement. The result is one pick at a time from the integral ranked
+order after eligibility, franchise deduplication, and semantic reranking.
+Cluster diversity must not displace a higher-confidence candidate.
+
+The card has exactly two actions:
+
+- `me dá outro` advances to the next item in the frozen ranked order and logs
+  an explicit item rejection with its rank. It never recalculates the
+  posterior or changes region.
+- `vou assistir` accepts the current item and closes the session. Merely
+  displaying a recommendation is not acceptance.
+
+After five rejected items, later cards disclose that confidence has fallen:
+“daqui pra baixo já é chute”. They remain available.
+
+The product metrics are acceptance@1, effort-to-accept (the count of
+`me dá outro` actions), and the per-session `vou assistir` rate. Every
+displayed item retains posterior score and rank; every `me dá outro` retains
+an explicit rejection and rank; acceptance retains the accepted rank. These
+are the only ranking outcomes currently carrying real behavioral ground
+truth. Target position and SC@3 remain synthetic/offline diagnostics and are
+not product metrics.
+
+### Post-film signals
+
+The post-film thumbs signal answers only “era a vibe que eu esperava?”. It
+measures motor mood accuracy, not film quality. Film quality and reviews belong
+to Letterboxd. Per-session logs retain accepted-pick position, preceding
+rejections, vibe feedback, and whether the film was logged on Letterboxd.
+
+Acceptance schedules one reminder for runtime plus 30 minutes. The reminder is
+never repeated. Its `já loguei` action records completion; no response remains
+logged as not completed.
+
+### Duration and eligibility
+
+Declared duration is a ceiling, never a range: 90 means any film up to 90
+minutes, 120 means any film up to 120 minutes, 150 means any film up to 150
+minutes, and `150+` means no limit.
+
+Runtime is an intrinsic catalog fact fetched from TMDB at build time and
+embedded in the runtime bundle for all recommendation candidates and probes.
+Session eligibility performs no external runtime lookup. Unknown runtime is
+always fail-open.
+
+The eligibility mask operates over the complete candidate catalog before
+ranking. Card enrichment and availability are informational delivery paths;
+their success or failure cannot change eligibility. Availability is not a
+candidate filter.
+
+Normal-mode eligibility has a sanity floor of 180 candidates (the operational
+interpretation of “about 200”). Breaching it records an alert, notifies the
+session, and bypasses the suspect duration filter fail-open.
+
+### Transport result
+
+The resident service/file-id architecture is accepted: the measured
+14-round session had callback-to-send p50 `366.74441 ms`, calculation p50
+`18.537246 ms`, and media p50 `0.003 ms`. Telegram accounted for about 94% of
+the remaining wall time. Pair selection, likelihood, stopping, and the
+selection policy were not implicated in the duration-mask incident.
+
+### Production-scale validity closure
+
+The top-80 cutoff was a terminal delivery serialization limit, never posterior
+support. Posterior updates, pair selection, entropy, and stopping always used
+all 1,215 candidates. The production-scale trajectory conclusions remain
+valid: posterior `1.17x` catalog-random, production posterior plus semantic
+top-60 `2.34x` (`2.35x` rounded), median target position `421.5`, and ceiling
+in `47/50` sessions. The earlier stable-taste estimate of `1.76x` came from
+only `3/50` hits and is superseded by the full-catalog census below.
+
+Semantic top-60 recorded four hits versus three for stable taste and two for
+pure posterior: one session of descriptive margin over stable taste and two
+over posterior. At N=50 these rare-event differences are underpowered and do
+not establish superiority.
+
+The 10%-of-eligible semantic window is rejected as the tenth mechanism
+hypothesis refuted by ablation. It improved one duration ceiling and degraded
+the two largest catalogs. Production keeps fixed window 60 and disables
+semantic reranking below 250 eligible candidates.
+
+Final picks from `quiz_20260729_124143_2290` and
+`quiz_20260729_131725_2321` are invalid. Their rounds and stopping outcomes
+remain valid.
+
+### Legibility intervention
+
+Response legibility is treated as a response-noise intervention, not a
+cosmetic layer. Keswani et al., AIES 2024
+([arXiv:2407.18889](https://arxiv.org/abs/2407.18889)), report that active
+learning can match or underperform random selection when preferences are
+unstable or answers are noisy. With a transient mood target and an
+approximately 25% noisy synthetic respondent, this adversarial regime is the
+leading hypothesis for the weak `1.17x` posterior lift and the sequence of
+mechanism refutations. It is a hypothesis, not a demonstrated causal result
+for this quiz.
+
+The 3%/10%/20% band ablation leaves 10% as promising but inconclusive:
+`none` fell from `68.1282%` to `64.2036%`, with a paired 95% bootstrap
+interval for the change of `[-8.6459, +0.6899]` percentage points. The 20%
+band is rejected. The 10% band is active as a real-use canary; keep or revert
+is decided from per-session `noneRate`, not from the inconclusive offline
+interval.
+
+The first remote-LLM legibility benchmark is invalid for model comparison. On
+30
+deterministically replayed real-session states, the 10% band yielded 10–15
+candidates in only 3 states and a median of 2. With provisional mechanical
+labels, random selection had `69.8333%` illegible choices, GPT-5 nano
+`66.6667%`, and GPT-5 mini `70.0000%`; those near-ties primarily measure the
+collapsed input set, not model judgment. The LLM layer is on hold, not
+rejected. It may be retested only after the real candidate set contains
+10–15 choices. No scorer is distilled from this invalid benchmark.
+
+The collapse diagnosis on 36 replay states found: pool `763`, static semantic
+admissibility median `399`, unused-probe removal median `347`, 95%-of-best
+A/B-channel EIG floor median `2`, and final 10% total-EIG band median `2`.
+Thus probe reuse is not the main cause; the A/B floor is. Refused-region and
+repeated-dominant-axis filters were never active in production and were
+measured only as counterfactuals.
+
+The 95% A/B-channel floor is the eleventh mechanism hypothesis refuted, and
+the most operationally costly: it was introduced without a calibrated value,
+remained active for weeks, and silently caused the lack of pair choice being
+investigated. Removing it entirely increased `none` from `64.2035964%` to
+`67.5359307%` on the current 10%-band protocol, confirming that the A/B
+anti-rejection mechanism has real value but that 95% was unjustified.
+
+A 50/70/85/95/off sweep calibrated its replacement. The 50% floor was the
+only tested point that restored a median candidate set of 6 while preserving
+competitive outcomes: `none 65.3980464%`, posterior SC@3 `6%`, semantic-60
+SC@3 `6%`. At 70%, the candidate median was 4 and semantic-60 SC@3 `2%`; at
+85%, 2.5 and `2%`; at 95%, 2 and `4%`; off, 6 and `8%` but `none 67.5359307%`.
+Production therefore uses the sweep-calibrated 50% floor with the 10% band
+canary. It remains subject to real-use `noneRate` evaluation.
+
+Method rule: a new mechanism with a free parameter cannot enter production
+until the parameter comes from an explicit calibration or sweep. If nobody
+can justify the value, the mechanism is not ready.
+
+The pool itself is also structurally narrow. A provisional mechanical rule
+found strong sensitivity to its shared-profile threshold: `21.3630%` of the
+763 pairs fall below RMS `0.40`, `42.4639%` below `0.50`, and `84.5347%`
+below `0.75`. Therefore the earlier approximately 70% figure is not a
+calibrated pool fact.
+
+An offline pool of 4,096 pairs excluding the strict RMS-0.75 rule expanded
+coverage from 247 to 280 probes and from 200 to 602 cluster regions. In the
+50-target harness it reduced `none` from `60.5299367%` to `54.9057609%`,
+changed posterior SC@3 from `4%` to `2%`, semantic-60 SC@3 from `8%` to
+`10%`, and median target rank from `421.5` to `402`. It remains staging only:
+the mixed accuracy result and uncalibrated threshold do not justify
+promotion. Even with 4,096 pairs, the A/B floor still reduced the median to
+3 and the final 10% band to 1.5.
+
+### Identifiability closure for axis credit
+
+Named reason-by-axis attribution is closed. Kleindessner and von Luxburg,
+“Uniqueness of Ordinal Embedding,” COLT 2014
+([PMLR 35](https://proceedings.mlr.press/v35/kleindessner14.html)), establish
+ordinal-embedding uniqueness only up to similarity transformations under
+their assumptions. Therefore comparisons identify geometry, not an intrinsic
+named coordinate basis. With highly correlated named axes, per-axis causal
+credit is structurally non-identifiable from ordinal answers alone.
+
+The five axis-credit variants are not implementation failures; they targeted
+a non-identifiable object. No whitening, axis mask, or endorsement bonus
+variant returns to the roadmap. This does not claim that noisy finite quiz
+data perfectly recover geometry; it says named axis attribution is not
+uniquely recoverable from that geometry.
+
+### Label-audit queue
+
+Nahum et al.
+([arXiv:2410.18889](https://arxiv.org/abs/2410.18889)) support concentrating
+human review on high-confidence disagreements from a multi-LLM ensemble.
+That confirms the existing three-pass disagreement queue and does not justify
+a new labeling campaign. The current seven-film worst-disagreement queue
+remains the review scope.
+
+The stronger numerical claim that roughly 6.5% of annotations contain roughly
+80% of errors was not found in the verified paper and is deliberately not
+recorded as an established result.
+
+Because the deep-research report contained at least this one non-traceable
+quantitative assertion, the entire report carries a source-reliability
+caveat: each material claim must be verified against its primary source before
+it informs a product decision.
+
+### Stopping backlog
+
+GLR/Chernoff stopping remains research backlog only. Kaufmann, Cappé and
+Garivier (JMLR 2016) and Garivier and Kaufmann (PMLR 2016) motivate comparing
+generalized likelihood-ratio separation between a leader and its nearest
+rival instead of requiring a high absolute posterior mass. A future study
+should frame the 14-round product as fixed-budget best-arm identification and
+always return the best current arm. It should evaluate Borda-style objectives
+for potentially non-transitive mood preferences rather than assume a
+Condorcet winner, following the dueling-bandit distinction discussed by
+Jamieson et al., AISTATS 2015.
+
+Nothing in this backlog changes the current likelihood, posterior, stopping
+rule, delivery, or labeling pipeline.
+
+### Terminal LLM delivery rerank
+
+A terminal OpenAI reranker was tested offline before the pair-selection LLM
+idea. On the same frozen 50-target production-scale sample, it saw only the
+ordered pair/answer history and ordinary candidate metadata. It did not see
+targets, axes, posterior values, cluster labels, masses, or confidence.
+
+The best nominal arm was GPT-5 mini over the semantically reranked top-30:
+same-cell top-3 `4/50`, versus `2/50` for semantic top-30 and `3/50` for the
+current semantic top-60. Exact-target median rank remained `470.5`. This is
+only one-session margin over current production.
+
+The no-fame gate was not clean. In the best arm, movement had essentially zero
+correlation with IMDb rating (`rho +0.003`) but small positive correlations
+with catalog-list count (`+0.132`) and TMDB popularity (`+0.136`). Letterboxd
+coverage was only 25 of 1,500 movement observations and cannot adjudicate
+bias.
+
+The terminal LLM layer is therefore not promoted. Production remains local
+semantic top-60 with the existing fail-open behavior and no new model call.
+If revisited, it must beat semantic top-60 again after controlling the
+popularity signal. `acceptance@1` remains the decisive real-use metric.
+
+Evidence:
+`data/movies-quiz-v3-evaluation/terminal-llm-rerank-production-scale-v1.md`.
+
+### Statistical power of production-scale validation
+
+SC@3 is too rare for configuration decisions with 50 sessions. At a
+catalog-random base rate of approximately `3.41%`, observed comparisons such
+as posterior `2/50` versus semantic `4/50`, stable taste `3/50` versus
+posterior `2/50`, terminal LLM `4/50` versus production `3/50`, and clean-pool
+posterior `2/50` versus `1/50` are underpowered. They remain descriptive
+observations, not established ordering between policies.
+
+A standard two-sided two-proportion approximation for `4%` versus `8%`,
+80% power, and alpha `0.05` requires approximately `553` sessions per arm.
+Future SC@3 decisions therefore require hundreds of sessions per arm; no
+production configuration may be promoted or rejected from SC@3 at N=50.
+
+The first cost estimate of `US$1.50` per arm / `US$3.01` for two arms did not
+describe the implemented paired design accurately. The powered harness shares
+one set of 500 respondent trajectories across posterior, semantic, and
+terminal arms; it does not pay for 1,500 independent quiz sessions.
+
+At its checkpoint, all 500 trajectories had reached at least round 5, 481 had
+reached round 10, and 25 had already stopped: 4,955 answered rounds total.
+Those calls cost `US$0.58449375`, or `US$0.00011796` per answered round. The
+misleading quotient `US$0.584 / 25 = US$0.023 per completed session` assigns
+the substantial work already performed for the 475 active trajectories a
+cost of zero and must not be used for projection.
+
+Using the observed per-round cost, the respondent's absolute worst case
+through round 14 is about `US$0.826` total. Using the separately measured
+terminal-reranker cost of `US$0.001735955` per session, 500 terminal calls add
+about `US$0.868`. The powered four-policy comparison is therefore projected
+at no more than approximately `US$1.69`, not `US$47`. The checkpoint remains
+preserved but paused after Felipe's cancellation request and the quota
+failure; do not resume without a new explicit decision after this corrected
+accounting.
+
+The N=50 harness has useful power for larger, denser signals. `none` rate
+aggregates roughly 650–700 rounds per arm and can resolve effects near eight
+percentage points, while five-point effects remain uncertain. Target rank is
+continuous over 50 sessions and is more informative than rare SC@3.
+Movement/popularity correlations use about 1,500 rows, though repeated films
+require clustered rather than naive independent-observation inference.
+
+The clean 4,096-pair pool's approximately eight-point reduction in `none` is
+the only current production-scale configuration signal clearly above the
+N=50 harness's useful detection range. Its mechanical legibility threshold
+still requires Felipe's blind calibration before promotion.
+
+### Terminal LLM real-use canary
+
+Felipe explicitly accepts terminal latency and authorizes the best measured
+configuration as a real-use canary despite inconclusive offline accuracy:
+GPT-5 mini over the semantically reranked top-30. The decision is grounded in
+single-user product judgment, not a claim that `4/50` establishes superiority
+over `3/50`.
+
+The terminal call shows Telegram `typing`, has a hard 45-second timeout, and
+fails open to the existing semantic order. Input order, output order,
+explanation, movements, usage, fallback reason, and wall latency are persisted
+for replay and audit.
+
+The deciding product metrics are `acceptance@1` and
+effort-to-accept (`me dá outro` count). Popularity correlation is reported
+every ten completed real sessions. If either movement correlation with TMDB
+popularity or catalog-list count exceeds `+0.25`, the terminal LLM layer is
+automatically disabled. No local scorer is distilled.
+
+The card explanation is active as a second output of the same terminal rerank
+call, with zero additional provider calls or model latency. It can affect copy
+only, never the chosen film or frozen order. The first card uses the concrete
+session-grounded explanation; later `me dá outro` cards use their ordinary
+metadata copy because the single terminal call explained only its first
+placed film.
+
+### Powered existential comparison
+
+No additional parameter sweep is authorized before the powered existential
+campaign. The next comparison uses 500 shared targets per arm:
+
+1. pure posterior;
+2. posterior plus semantic top-60;
+3. posterior plus semantic top-60 plus terminal GPT-5 mini top-30;
+4. stable-taste prior without quiz.
+
+The same 500 quiz trajectories are reused for arms 1–3, producing a paired
+comparison; arm 4 uses the same 500 targets without elicitation. Report
+same-cluster top-3, `none`, median and mean exact-target rank, terminal
+popularity correlations, paired uncertainty, and token-derived cost. This
+campaign precedes any revisit of A/B floor, near-optimal band, semantic
+window, or pair-pool parameters.
+
+The campaign is currently paused, not discarded. Its checkpoint contains 500
+trajectories through roughly round 10 and 25 completed trajectories. The next
+paid experiment remains the clean-pool validation; do not spend more on
+policy comparison while the pair pool may still change.
+
+### Human-calibrated pair legibility
+
+Felipe labeled 32 pair presentations using a product criterion: a pair is
+respondable when its question can be named immediately, without forcing an
+attribute analysis. The labels contain 15 respondable and 17 non-respondable
+presentations, including repeated pairs as they appeared in the blind audit.
+
+The best threshold over distance in the weighted 12-axis geometry reached
+only `22/32 = 68.75%` accuracy. It recovered every non-respondable label but
+also rejected ten respondable pairs. This confirms that geometry alone does
+not represent the production-category distinctions Felipe actually uses.
+
+A conservative metadata rule reached `28/32 = 87.5%`: 13 true positives,
+15 true negatives, zero false positives, and four false negatives. A pair is
+marked mechanically illegible when either film shares a TMDB collection,
+both are animated, both belong to the same explicit Marvel/DC production
+universe, or their first two TMDB genres have Jaccard overlap at least `0.67`
+and their calibrated mood RMS distance is below `0.47`.
+
+The zero-false-positive operating point is deliberate. The four misses are
+semantic categories not safely captured by existing metadata: sports
+inspiration, dark investigative thriller, broad franchise blockbuster, and
+light family comedy. The rule must not be broadened merely to fit this small
+calibration sample.
+
+Applied to the current 763-pair pool, the rule marks `224/763 = 29.3578%`
+illegible. A clean 4,096-pair staging build covers 278 probes and 586 cluster
+regions. It is not promoted until the blind respondent harness reports
+`none`, exact-target rank, and candidate-set size. That validation is
+currently blocked by OpenAI `insufficient_quota`; production remains on the
+763-pair pool.
+
+Evidence:
+`data/movies-quiz-v3-evaluation/legibility-label-calibration-v1.json` and
+`data/movies-quiz-v3-evaluation/legible-pool-build-v1.json`.
+
+All four clauses fire on the current pool. Counts before overlap removal are:
+same TMDB collection 16, both animated 120, same Marvel/DC universe 57, and
+same-primary-genre plus low-mood-contrast 60. Unique contributions are
+respectively 6, 113, 41, and 37. No clause is a zero-yield degree of freedom;
+the both-animated rule supplies 113 of the union's 224 unique removals.
+
+The in-sample result is not sufficient for promotion. A 30-pair blind
+holdout, matched to the original audit's RMS distribution and excluding all
+calibration pairs, is awaiting Felipe's R/N labels. Promotion requires about
+80% holdout accuracy; below 75% the calibrated compound rule is considered
+overfit and must be reduced to mechanically defensible clauses.
+
+Distance-only legibility is closed as the primary solution. Eight of the 17
+non-respondable calibration presentations were two animated films, while
+animation has weight 0.2 in the standardized mood geometry. The geometry can
+place two animations far apart on other mood dimensions while missing the
+production category that dominates the human judgment.
+
+### Terminal explanation contract
+
+The card explanation is the second field of the existing terminal rerank
+response, never a second model call. The model must first produce the full
+permutation and then explain the film it placed first. Inputs contain title,
+year, director, genres, synopsis, and ordered session history, including
+`nenhum`; they structurally exclude Letterboxd and IMDb ratings.
+
+The explanation must be one short concrete sentence grounded in selected or
+rejected films. It may not mention axes, scores, fame, prizes, ratings, or
+algorithmic state, and may not reveal twists, endings, or character deaths.
+Failure or timeout preserves the semantic order and ordinary metadata copy.
+
+### Stable-taste full-catalog census
+
+The no-quiz stable-taste baseline was evaluated locally on every candidate,
+not on a duplicated N=2,000 sample. Repeating 785 targets would add no
+information and would falsely narrow uncertainty.
+
+Across the exact 1,215-film catalog, the fixed stable-taste top three cover
+the target's cluster for `55/1,215 = 4.526748971%` of targets. A target
+bootstrap gives `[3.374485597%, 5.679012346%]`. Exact-target median and mean
+rank are both 608; this is an identity for a census of any fixed permutation,
+because every rank from 1 through 1,215 occurs exactly once. The census is a
+free baseline but cannot decide the project alone; it must be contrasted with
+the quiz policy on the same target population.
+
+Against the K=80 random reference of `3.41%`, the census has a descriptive
+lift of `+1.116748971` percentage points (`1.327492x`). However, `3.41%` lies
+inside the target-bootstrap interval, so the no-quiz stable-taste policy has
+not demonstrated a generalizable advantage over random selection. This is
+not literal equality—the finite-catalog point estimate is higher—but it
+invalidates the former `1.76x` claim as evidence. The project's existential
+question is therefore whether any deployed quiz policy demonstrably beats
+random selection.
+
+The planned production-scale comparison is paired. Posterior-only,
+posterior-plus-semantic, and posterior-plus-semantic-plus-terminal-LLM reuse
+the exact same pair trajectory and automatic responses; only their terminal
+ordering differs. This preserves validity and reduces cost and variance.
+Any arm that changes pair selection, likelihood update, or stopping would
+break the pairing and require its own trajectories.
+
+Evidence:
+`data/movies-quiz-v3-evaluation/stable-taste-census-v1.json`.
+
+### Legibility holdout and rule refinement
+
+Felipe returned 30 blind holdout labels: 20 respondable, 10
+non-respondable, with nine marked as boundary judgments. The v1 metadata rule
+scored `25/30 = 83.3333%` overall and `17/21 = 80.9524%` on non-boundary
+labels. It therefore cleared the predeclared 80% holdout gate, but its error
+structure shows that its clauses are not the final production rule.
+
+The coarse `bothAnimated` clause scored `24/30 = 80%` in isolation. Its two
+false positives were exactly Japanese melancholy animation versus western
+studio animation: Suzume versus Toy Story 3 and Suzume versus The
+Incredibles. Replacing it with an animation-family clause — both western
+animated, or both Japanese action animation — scored `26/30 = 86.6667%`
+with zero false positives.
+
+The primary-genre plus mood-RMS clause is removed from the candidate rule.
+It encodes surface similarity and is structurally aligned with corrected
+false rejections such as investigative thrillers that provide very different
+experiences. A narrow broad-comedy proxy, requiring both TMDB Comedy, both
+`comic_serious` z <= -1.8, and absolute comic-axis difference <= 0.25, catches
+Movie 43/Zohan and Baywatch/Deadpool 2. This proxy was derived from the
+holdout and is not externally validated.
+
+The resulting candidate rule scored `29/30 = 96.6667%` overall and `21/21 =
+100%` on clear labels. These figures are descriptive fit, not a promotion
+gate, because animation-family and narrow-comedy refinements used the holdout
+error pattern. A new blind sample is required before production use. The only
+miss was boundary pair Black Adam/Uncharted.
+
+The holdout is representative of the pool in aggregate RMS and rejection
+rate but not in clause composition. Median RMS was `0.5638` versus `0.5422`
+in the pool; same-cluster rate `16.67%` versus `18.09%`; v1-rule rejection
+rate `30.0%` versus `29.36%`. However animation/animation was `26.67%` in the
+holdout versus `15.73%` in the pool, while collection and franchise-universe
+clauses were underrepresented. The aggregate match is partly cancellation,
+not proof of categorical representativeness.
+
+Legibility filtering must be phase-aware. Of 223 pool pairs rejected by the
+refined candidate rule, 55 are same-cluster (`24.66%`). Those pairs are
+already irrelevant to coarse cross-cluster localization but may be useful in
+fine refinement. Do not globally delete them at build time. A future staging
+implementation should retain the full pool and apply family-based exclusions
+only during coarse selection, relaxing them in fine.
+
+Felipe corrected five confident-N labels from the first audit to R:
+Demon Slayer/Suzume twice, Creed II/The Blind Side, Night at the
+Museum/The Princess Bride, and Iron Man 3/The Phantom Menace. Harry Potter
+4/Spider-Man 2 becomes boundary rather than confident N. The first audit is
+historical discovery evidence only: its labeling criterion changed during
+review and it must not be used as an accuracy reference unless all pairs are
+blindly relabeled under the final criterion.
+
+Unknown-title protocol: when Felipe does not know either film, label `?` and
+exclude the pair from accuracy rather than treating it as N. The Drama/X was
+confirmed R after correcting title knowledge. A release-date audit found
+only three 2026 probes — Project Hail Mary, The Drama, and The Odyssey — and
+TMDB marks all three released before the current date; no objectively
+impossible-to-have-seen probe was found.
+
+Evidence:
+`data/movies-quiz-v3-evaluation/legibility-holdout-results-v1.json`.
+
+### Third legibility holdout
+
+The refined rule was frozen before drawing a third blind holdout. Thirty new
+pairs were sampled after excluding all 58 previously audited unique pairs,
+using largest-remainder quotas over the complete rule-signature distribution
+of the 763-pair production pool. The sample contains 21 rule-negative pairs,
+four animation-family pairs, one collection pair, two franchise-universe
+pairs, and two narrow-broad-comedy pairs. Predictions were withheld from the
+reviewer. Felipe returned 22 R and eight N, with three boundary judgments and
+no unknowns. The frozen rule scored `29/30 = 96.6667%` overall and `26/27 =
+96.2963%` on non-boundary pairs. The only error was Bridesmaids/Superbad:
+the narrow-comedy proxy rejected it, while Felipe found a clear adult-female
+friendship/class versus adolescent-male virginity contrast. The Wilson 95%
+intervals are `[83.3296%, 99.4091%]` overall and
+`[81.7165%, 99.3432%]` on non-boundary labels.
+
+This validates the family-identity core but not the exact comedy clause.
+Do not broaden it post-hoc. A future comedy rule would additionally need
+subject/demographic identity and a fresh blind gate.
+
+Poststratifying the preceding 30-pair holdout to the production pool changes
+the refined rule's binary rejection accuracy only slightly, to
+`96.6298446%`. Exact full-signature reweighting over represented strata gives
+`96.5576592%`, covering `747/763 = 97.90%` of the pool. The 16 collection
+and collection-plus-universe pairs absent from that holdout imply a strict
+full-population accuracy bound of `[94.5328590%, 96.6298446%]`; this remains
+an in-sample diagnostic, not external validation.
+
+The third holdout exposed a sampling limitation: stratification matched the
+frozen rule's signatures rather than all cultural category-pair
+combinations. A mutually exclusive category-pair poststratification covers
+`657/763 = 86.1075%` of the pool and estimates `98.8838%` accuracy within
+represented strata, but the missing 106 pairs make the full-population point
+estimate unidentified; the strict bound is `[85.1464%, 99.0389%]`.
+Therefore the raw blind `29/30` is the primary honest result, while the
+poststratification is sensitivity analysis rather than a corrected headline.
+
+The decisive enrichment check does not support the hypothesis that the
+current selector disproportionately shows identity-illegible pairs. Under
+the frozen identity rule, `223/763 = 29.2267%` of the production pool is
+rejected, versus `1,048/4,955 = 21.1504%` of pairs actually shown in the
+current 500-session checkpoint (`1,045/4,946 = 21.1282%` in coarse).
+Thus the active 10% band plus 50% A/B floor selects fewer such pairs than the
+pool baseline, not more. The earlier lived illegibility was consistent with
+the old 3%/95% candidate collapse; a new coarse metadata filter is now a
+marginal refinement, not a demonstrated necessity, and remains out of
+production. This check uses the current 763-pair pool; the old globally
+filtered 4,096-pair build is not a valid proxy for the intended
+preserve-all/coarse-only design.
+
+Historical application separates the real product failure from pool
+composition. In `quiz_20260729_131725_2321`, the complete frozen rule flags
+`7/14 = 50%` of shown pairs. One flag is the unvalidated comedy false
+positive Anyone But You/Baywatch; the validated production-family core flags
+`6/14 = 42.8571%`, matching the manual audit. The session nevertheless had
+`11/14 = 78.5714%` `none` answers, so at least five rejections occurred on
+pairs the validated identity rule considers legible. Legibility therefore
+cannot explain the crisis by itself.
+
+Across the five old relay sessions, the complete frozen rule flags only
+`3/61 = 4.9180%` of pairs and the validated family core only
+`2/61 = 3.2787%`. The 95% A/B-floor collapse caused repetition, scarcity and
+poor directional coverage, but did not generally manifest as
+same-production-family illegibility. The honest causal record is:
+
+1. The terminal eligibility mask starting from top-80 plus duration-as-range
+   reduced the worst real session to 41 candidates and dominated its
+   coverage failure.
+2. The arbitrary 95% A/B floor collapsed relay candidate menus to about two,
+   causing low variation and forced selection.
+3. Dense franchise/animation pool composition contributed to identity
+   illegibility, but was the smallest of the three mechanisms.
+
+The investigation initially mislabeled a coverage complaint as legibility
+and then attributed filter-induced scarcity to pool composition. Historical
+illegibility estimates of 70% (arbitrary RMS), 53% (unstable first labels),
+33% and 27% (corrected blind samples), and the current 21.15%-shown/29.23%-pool
+measurement must be presented with their distinct protocols. The first
+sample is historical; the blind frozen-rule result is `29/30`; no fourth
+holdout or comedy-clause refinement is authorized.
+
+Terminology is now strict:
+
+- **Illegible** means the person cannot distinguish the experiences proposed
+  by the two films. Its intervention is pair/pool composition.
+- **Irrelevant** means the distinction is understandable but neither side is
+  near the desired direction. Its intervention is candidate coverage and
+  region localization.
+
+Felipe had used “illegible” operationally for both. Most complaints in the
+failed sessions were irrelevance, not indistinguishability. This conceptual
+confusion sent the project through RMS thresholds, metadata rules and three
+holdouts aimed at the smaller mechanism. Those audits remain useful
+knowledge, but they do not replace the demonstrated coverage diagnosis.
+
+Evidence:
+`data/movies-quiz-v3-evaluation/legibility-holdout-results-v2.json`.
+
+### Preregistered interpretation of the N=1,000 paired campaign
+
+The interpretation below was fixed before seeing final campaign results.
+The random K=80 reference is `3.41%`. Stable taste without quiz has point
+estimate `4.526748971%` and target-bootstrap interval
+`[3.374485597%, 5.679012346%]`, so it has not demonstrated lift over random.
+
+- Scenario A: if any quiz arm's SC@3 95% interval lies wholly above 3.41%,
+  the quiz has measurable absolute lift and the pessimistic conclusion is
+  withdrawn.
+- Scenario B: if no arm clears random absolutely but a paired contrast is
+  nonzero, terminal ordering matters while absolute SC@3 is limited by
+  another component.
+- Scenario C: if neither absolute nor paired lift is detected, the data are
+  compatible both with no SC@3 value and with hidden-target SC@3 being
+  mismatched to a product where multiple films can satisfy a mood. Do not
+  resolve that ambiguity with another harness; use real `acceptance@1` and
+  effort-to-accept.
+
+No new arm, larger N, or parameter sweep follows this result. The report must
+include per-arm SC@3 with 95% intervals relative to 3.41%; paired differences
+arm 2 minus arm 1 and arm 3 minus arm 2 with intervals; identical shared
+`none` rate; mean and median target rank; arm-3 popularity correlation; final
+cost; and an integrity audit proving identical pair/answer trajectories in
+all included sessions. Any divergent session is excluded from paired
+analysis.
+
+### Powered existential comparison — completed
+
+The preregistered N=1,000 paired campaign completed on 2026-07-29 with exact
+pairing integrity: 1,000 trajectories compared and zero divergent sessions.
+Against the fixed random reference of 3.41%, arm 1 posterior produced
+55/1,000 SC@3 = 5.50% (Wilson 95% CI 4.25–7.09%), arm 2 semantic-60 produced
+107/1,000 = 10.70% (8.93–12.77%), and arm 3 terminal GPT-5 mini produced
+80/1,000 = 8.00% (6.47–9.85%). All intervals clear random, so the
+preregistered result is **Scenario A** and the pessimistic absolute-lift
+conclusion is withdrawn.
+
+The paired arm 2 − arm 1 difference was +5.20 pp (target-bootstrap 95% CI
++3.40 to +7.10 pp); arm 3 − arm 2 was −2.70 pp (−4.80 to −0.70 pp).
+Semantic-60 ordering helped this hidden-target metric, while terminal LLM
+reranking hurt it relative to semantic-60. This authorizes no new arm, larger
+N, or sweep. Shared quiz-arm none was identical at 60.4011%. Mean/median
+target ranks were 414.932/366.5, 414.025/366.5, and 414.314/366.5. Arm-3
+popularity Spearman correlations were +0.09043 for TMDB popularity and
++0.10008 for list count, below the +0.25 disable threshold. Total
+token-derived cost was US$3.1792274. Production was not mutated.
+
+This result **refutes** the earlier conclusion that the quiz had not
+demonstrated an advantage over stable taste without a quiz. That conclusion
+came from `4/50` versus `3/50`: four events versus three. The preregistered
+stable-taste estimate is 4.5267% with target-bootstrap 95% interval
+3.3745–5.6790%, which does not overlap semantic-60's powered Wilson interval
+8.9323–12.7685%. Asking is worth it.
+
+The methodological correction is binding: SC@3 is a rare-event metric and
+future decisions based on it require samples in the hundreds or thousands,
+not N=50. The full N=1,000 paired campaign cost only US$3.1792274, so adequate
+power is cheap relative to carrying a wrong product conclusion for weeks.
+
+The raw arm 2 versus arm 3 contrast has a plausible representation confound:
+the synthetic LLM respondent can endorse probes semantically near the hidden
+target, and semantic reranking can recover that same representation. This
+does not invalidate quiz lift or arm 2 versus arm 1, but it motivated a
+read-only quartile diagnostic before treating arm 2 versus arm 3 as a product
+decision.
+
+That diagnostic did **not** show the predicted gradient. Using mean cosine
+similarity between the hidden target and probes endorsed by A/B answers, arm
+2 minus arm 3 SC@3 was +4.07, +0.41, +2.85, and +3.67 percentage points from
+the lowest to highest quartile. The low-to-high change was −0.39 pp and the
+sequence was not monotonic. Arm 2 was directionally ahead in every quartile;
+this specific closed-loop mechanism is therefore unsupported. The metric
+remains an offline hidden-target proxy, so real `acceptance@1` and
+effort-to-accept are still the product arbiter.
+
+Production now alternates deterministically only in real use: odd real-session
+numbers use arm 3 terminal GPT-5 mini and even numbers use arm 2 semantic-60.
+The separate `alternate_arms` switch is on in the production unit. Measurement
+contexts turn it off and must set one arm explicitly, preserving comparable
+replays. The selected arm is logged with `acceptance@1`, effort-to-accept, and
+vibe; an arm comparison is emitted every ten accepted real sessions.
+
+Card explanation is a separate post-pick GPT-5 mini call. The selected arm
+freezes the order first; the card is sent immediately with neutral copy and
+edited if the explanation arrives within 15 seconds. Timeout or failure keeps
+the neutral copy and is logged. Input is limited to the chosen film's title,
+year, director, genres, synopsis, and session answers—no axes, scores, or
+ratings. Recorded reranks and recorded explanations replay without calling a
+model.
+
+Only after completion, the separate 4,096-pair staging pool was audited
+read-only. Its v4 clustering has 80 clusters, yielding 800 cluster × probing
+axis cells rather than the historical 160. There were 681/800 zero cells
+(85.125%), versus historical 84/160 (52.50%); compare rates cautiously because
+cluster granularity changed. Defining dense clusters as the upper quartile of
+nonempty cluster size (at least seven probes), 69/144 full-weight-axis cells
+were missing across 18 dense clusters. No coverage optimization was
+implemented.
+
+The 69 gaps were then ranked by the mean final posterior mass their cluster
+received across the powered sessions. Cluster 23 dominates at 4.4786% mean
+mass and has seven missing full-weight axes; cluster 40 follows at 1.5183%
+with three. The full ordered list is in
+`coverage-gap-impact-v1.{json,md}`.
+
+For the impact check, a session was marked exposed when, at first localization,
+one of its localized clusters lacked an axis whose cumulative observed
+contrast was still at or below 0.8. Only 127/1,000 sessions localized; 53 were
+gap-exposed and 74 localized without a matching gap. SC@3 differences
+gap-minus-no-gap were +5.10 pp for posterior, −4.36 pp for semantic-60, and
++6.17 pp for terminal. The small groups and mixed signs do not show sessions
+with coverage gaps being systematically worse. Coverage stays a health
+diagnostic/backlog item; coverage-as-objective is not authorized.
+
+Evidence:
+`data/movies-quiz-v3-evaluation/existential-three-arm-1000-v1.json`,
+`data/movies-quiz-v3-evaluation/existential-three-arm-1000-v1.md`, and
+`data/movies-quiz-v3-evaluation/staging-4096-cluster-axis-coverage-v1.json`,
+`data/movies-quiz-v3-evaluation/representation-confound-quartiles-v1.json`,
+and `data/movies-quiz-v3-evaluation/coverage-gap-impact-v1.json`.
+
+### Posterior tempering β — frozen sweep invalidated; 0.70 restored
+
+The previously uncalibrated β=0.70 update tempering was swept read-only over
+0.40–1.20 on the 1,000 frozen powered trajectories. A deterministic
+SHA-256(session-id) split assigned exactly 500 sessions to selection and 500
+to holdout. Arm 2 semantic-60 was fixed, alternation was off, and no API call
+was made.
+
+Train selected β=0.40. On holdout, mean target log posterior probability was
+−11.85494 at β=0.40 versus −18.35906 at β=0.70: paired gain +6.50412 nats
+with SE 0.15748, apparently beyond the preregistered one-SE threshold.
+SC@3 was unchanged at 62/500 = 12.4%; mean target rank was 418.314 versus
+418.008.
+
+The objective was structurally degenerate here. With frozen evidence,
+`p(x) ∝ prior(x) · evidence(x)^β`; changing β primarily compresses or expands
+posterior ratios and barely changes ranking. Because the median hidden target
+is around rank 370/1,215 rather than near the top, concentrating probability
+necessarily removes mass from it. Mean target log probability therefore
+rewards a more diffuse posterior, not better recommendation quality, and
+would keep favoring smaller β below the tested boundary.
+
+The real finding is posterior misspecification/superconfidence. Mean `exp(H)`
+was 51.86 at β=0.40, 15.57 at β=0.70, and 5.94 at β=1.20 while the hidden
+target's median rank stayed around 370–373. β changes declared confidence and
+therefore the stopping gate, but it is not a quality lever for recommendation
+ranking under frozen trajectories. The former shorthand that “13 rounds
+become 9.1” was misleading: β discounts confidence, not ranking information.
+
+β=0.40 would also obstruct the confidence stop gate: its mean `exp(H)=51.86`
+stays above the approximately 33.3 threshold implied by
+`exp(H)/floor ≤ 2.0`. The frozen replay concealed the live pair-selection
+channel because EIG never got to choose a new pair from the changed posterior.
+
+The β=0.70 replay exactly reproduced the powered arm-2 evidence
+(107/1,000 SC@3; mean rank 414.025), validating the implementation. The brief
+β=0.40 promotion was reverted; production and the frozen baseline are back at
+β=0.70. The regression suite passed with median 10 and zero regressions.
+
+The final live paired harness compared β=0.70 with β=1.00 on 500 shared
+targets per arm, with fresh EIG-driven pair selection, arm-2 semantic-60
+delivery fixed, and alternation off. The selection channel is real:
+496/500 targets diverged, with 10.62 different-pair rounds per target on
+average.
+
+That divergence did not establish a quality gain. β=0.70 produced
+53/500 SC@3 = 10.6% [8.20%, 13.61%], median/mean target rank
+318/394.966; β=1.00 produced 64/500 = 12.8% [10.15%, 16.01%],
+median/mean rank 323.5/403.854. The paired SC@3 difference was +2.2 pp
+[−1.4, +5.6], and the paired median-rank improvement
+β0.70−β1.00 was −5.5 [−48.0, +42.5]. Neither preregistered quality
+criterion cleared noise.
+
+β=1.00 concentrated and stopped somewhat sooner but did not improve
+recommendation quality: mean final `exp(H)` 8.04 versus 15.56, mean stop
+round 13.086 versus 13.426, and ceiling rate 83.8% versus 88.8%.
+Mean `none` was 46.90% versus 51.21%. Production remains at β=0.70 and
+the β line is closed definitively. The live harness cost US$1.574458.
+
+Evidence:
+`data/movies-quiz-v3-evaluation/beta-tempering-frozen-sweep-v1.json`,
+`data/movies-quiz-v3-evaluation/beta-tempering-frozen-sweep-v1.md`, and
+`data/movies-quiz-target-test-dataset/current-rules-replay-beta-070-revert-final-v1.json`,
+`data/movies-quiz-v3-evaluation/beta-live-eig-070-vs-100-v1.json`, and
+`data/movies-quiz-v3-evaluation/beta-live-eig-070-vs-100-v1.md`.
