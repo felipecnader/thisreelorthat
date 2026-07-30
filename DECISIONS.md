@@ -931,9 +931,20 @@ the paired difference was +1.4 pp with 95% bootstrap interval
 [−0.2, +3.1]. Median rank was identical at 366.5 and mean rank improved by
 only 0.109 [−0.152, +0.382]. `none` was identical by construction. The point
 estimate favors `large`, but the preregistered interval-excludes-zero gate did
-not pass, so no window sweep or automatic promotion occurred. Generating the
-1,497-film large corpus used 384,626 input tokens and cost US$0.05000138;
-the original generation latency was not recorded and is not estimated.
+not pass. Felipe explicitly promoted `large` on 2026-07-30 by asymmetric loss
+and effectively zero operational cost, not by statistical significance: the
+clean interval permits at most −0.2 pp loss versus +3.1 pp gain, while the
+original `small` choice came from the sample in which 103/500 sessions leaked
+the target as a probe. The +1.4 pp point estimate is likely inflated by the
+winner's curse because this comparison was revisited after it looked
+favorable. Window remains fixed at 60; no sweep ran.
+
+The already-generated 1,497-film `large` corpus was reused rather than billed
+twice. Its original generation used 384,626 input tokens and cost
+US$0.05000138; original API latency was not recorded. A same-process local
+benchmark of the production rerank over 300 warm calls measured `small`
+p50/p95/p99 27.60/30.91/39.01 ms and `large` 28.46/31.30/39.03 ms. The
+dimension doubling added 0.86 ms at p50 and no material tail penalty.
 
 **Cluster-size artifact audit.** Embedding clusters are somewhat more unequal
 than current axis clusters, but not enough to explain the external-alignment
@@ -952,6 +963,21 @@ embedding-cluster membership and the proposed hybrid architecture is
 operationally plausible. This is a predictability proxy, not a direct
 mutual-information estimate or proof that live EIG remains useful; no target
 geometry was changed.
+
+**Optimization freeze.** After the `large` promotion, no new test, arm, sweep,
+campaign, or speculative optimization is authorized. Remaining capacity is
+reserved for operational failures, which are fixed immediately. Production
+continues to accumulate `acceptance@1`, effort-to-accept, accepted-pick
+position, and post-film vibe without experimental spend.
+
+Backlog retains two zero-API diagnostics for the hybrid architecture:
+(1) replay the 1,000 frozen trajectories scored against embedding clusters,
+with the current 3.1× random ratio as reference and an asymmetric reading
+(a win is strong; a loss is inconclusive because pairs came from the old
+geometry), and (2) compare pool EIG distributions under axis versus embedding
+cluster structures. The powered β=1.00 line also remains parked: candidate
+reductions in `none` 51.2%→46.9% and ceiling 88.8%→83.8%, requiring roughly
+US$10.50 with `none` preregistered as primary.
 
 **`comic_serious` ensemble relabel.** All 1,497 films were relabeled only on
 this axis with the same `gpt-5.6-sol / gpt-5.6-terra / gpt-5.6-sol` ensemble
