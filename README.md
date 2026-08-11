@@ -212,13 +212,19 @@ Synthetic personas answer by the same likelihood the engine uses, so a nonsensic
 ├── README.md                     # this file
 ├── DECISIONS.md                  # full decision ledger (Portuguese — the working record)
 ├── PUBLISHING-PLAN.md            # clean-room extraction plan and privacy rules
+├── engine/                       # transport-agnostic posterior, likelihood and quiz state
+├── api/                          # three-endpoint FastAPI adapter
+├── tests/                        # numerical invariants and API lifecycle
+├── pyproject.toml                # package and test dependencies
 ├── catalog.config.json           # which lists build your recommendation catalog
 ├── data/
 │   └── labels-default-catalog.json   # 1,131 films × 12 axes, pre-labeled
 └── LICENSE
 ```
 
-**The engine implementation is not in this repository yet.** The reference implementation is entangled with a private agent stack (absolute paths, secret manager, chat transport) and needs a clean-room rewrite before publication — see `PUBLISHING-PLAN.md` for the exact list of couplings. What ships today is the labeled catalog, the rubric-and-method documentation, and the full decision record. The math above is specified precisely enough to reimplement.
+The repository now includes a clean-room implementation of the numerical engine and a deliberately small HTTP adapter. Catalog-specific runtime data is injected through `CatalogBundle`: thresholds, entropy floor, cluster structure, pair pool, priors and public metadata travel with the catalog instead of being hard-coded. No private probes, production NPZ files, session logs, agent paths or chat transport are included.
+
+Install and run the tests with `python -m pip install -e '.[test]' && pytest`. Applications create a `CatalogBundle`, call `api.main.create_app(bundle)`, and provide durable session storage for production; the bundled in-memory store is only for demos and tests.
 
 ## The pre-labeled catalog
 

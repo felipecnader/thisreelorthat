@@ -1,0 +1,132 @@
+"""Validated, catalog-specific runtime bundle.
+
+The private reference implementation persisted this data in NPZ files.  The
+public engine deliberately accepts ordinary Python/numpy values so callers can
+choose JSON, NPZ, a database, or another storage format without coupling the
+math to a filesystem layout.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Mapping, Sequence
+
+import numpy as np
+from numpy.typing import NDArray
+
+
+FloatArray = NDArray[np.float64]
+IntArray = NDArray[np.int64]
+
+
+@dataclass(frozen=True)
+class EngineParameters:
+    kappa: float = 3.5
+    evidence_cap: float = 1.25
+    tie_sigma: float = 0.55
+    beta: float = 0.70
+
+    def __post_init__(self) -> None:
+        if self.kappa <= 0 or self.evidence_cap <= 0 or self.tie_sigma <= 0:
+            raise ValueError("likelihood parameters must be positive")
+        if not 0 < self.beta <= 1:
+            raise ValueError("beta must be in (0, 1]")
+
+
+@dataclass(frozen=True)
+class StopRule:
+    top_cluster_mass: float
+    entropy_floor_multiple: float
+    min_rounds: int = 5
+    base_max_rounds: int = 10
+    max_none_extension: int = 4
+
+    def __post_init__(self) -> None:
+        if not 0 < self.top_cluster_mass <= 1:
+            raise ValueError("top_cluster_mass must be in (0, 1]")
+        if self.entropy_floor_multiple <= 0:
+            raise ValueError("entropy_floor_multiple must be positive")
+        if self.min_rounds < 1 or self.base_max_rounds < self.min_rounds:
+            raise ValueError("invalid round bounds")
+
+
+@dataclass(frozen=True)
+class CatalogBundle:
+    probe_ids: tuple[str, ...]
+    candidate_ids: tuple[str, ...]
+    probe_vectors: FloatArray
+    candidate_vectors: FloatArray
+    cluster_labels: IntArray
+    cluster_centers: FloatArray
+    pair_pool: IntArray
+    prior: FloatArray
+    entropy_floor: float
+    stop_rule: StopRule
+    parameters: EngineParameters = field(default_factory=EngineParameters)
+    metadata: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        arrays = {
+            "probe_vectors": np.asarray(self.probe_vectors, dtype=float),
+            "candidate_vectors": np.asarray(self.candidate_vectors, dtype=float),
+            "cluster_labels": np.asarray(self.cluster_labels, dtype=int),
+            "cluster_centers": np.asarray(self.cluster_centers, dtype=float),
+            "pair_pool": np.asarray(self.pair_pool, dtype=int),
+            "prior": np.asarray(self.prior, dtype=float),
+        }
+        for name, value in arrays.items():
+            object.__setattr__(self, name, value)
+
+        if len(set(self.probe_ids)) != len(self.probe_ids):
+            raise ValueError("probe_ids must be unique")
+        if len(set(self.candidate_ids)) != len(self.candidate_ids):
+            raise ValueError("candidate_ids must be unique")
+        if set(self.probe_ids) & set(self.candidate_ids):
+            raise ValueError("probes and candidates must be disjoint")
+        if self.probe_vectors.ndim != 2 or len(self.probe_vectors) != len(self.probe_ids):
+            raise ValueError("probe vector shape does not match probe_ids")
+        if self.candidate_vectors.ndim != 2 or len(self.candidate_vectors) != len(self.candidate_ids):
+            raise ValueError("candidate vector shape does not match candidate_ids")
+        if self.probe_vectors.shape[1] != self.candidate_vectors.shape[1]:
+            raise ValueError("probe and candidate dimensions differ")
+        if self.cluster_centers.ndim != 2 or self.cluster_centers.shape[1] != self.candidate_vectors.shape[1]:
+            raise ValueError("cluster center shape is invalid")
+        if self.cluster_labels.shape != (len(self.candidate_ids),):
+            raise ValueError("one cluster label is required per candidate")
+        if np.any(self.cluster_labels < 0) or np.any(self.cluster_labels >= len(self.cluster_centers)):
+            raise ValueError("cluster label out of range")
+        if self.pair_pool.ndim != 2 or self.pair_pool.shape[1] != 2:
+            raise ValueError("pair_pool must have shape (n, 2)")
+        if len(self.pair_pool) == 0 or np.any(self.pair_pool < 0) or np.any(self.pair_pool >= len(self.probe_ids)):
+            raise ValueError("pair_pool contains an invalid probe index")
+        if np.any(self.pair_pool[:, 0] == self.pair_pool[:, 1]):
+            raise ValueError("a probe cannot be paired with itself")
+        if self.prior.shape != (len(self.candidate_ids),):
+            raise ValueError("prior shape does not match candidates")
+        if not np.all(np.isfinite(self.prior)) or np.any(self.prior <= 0):
+            raise ValueError("prior must be finite and strictly positive")
+        total = float(self.prior.sum())
+        if not np.isclose(total, 1.0, atol=1e-8):
+            raise ValueError("prior must sum to one")
+        if self.entropy_floor <= 0:
+            raise ValueError("entropy_floor must be positive")
+
+    @classmethod
+    def from_mapping(cls, value: Mapping[str, object]) -> "CatalogBundle":
+        """Build a bundle from a JSON-like mapping."""
+        stop = StopRule(**value["stop_rule"])  # type: ignore[arg-type]
+        params = EngineParameters(**value.get("parameters", {}))  # type: ignore[arg-type]
+        return cls(
+            probe_ids=tuple(value["probe_ids"]),  # type: ignore[arg-type]
+            candidate_ids=tuple(value["candidate_ids"]),  # type: ignore[arg-type]
+            probe_vectors=np.asarray(value["probe_vectors"], dtype=float),
+            candidate_vectors=np.asarray(value["candidate_vectors"], dtype=float),
+            cluster_labels=np.asarray(value["cluster_labels"], dtype=int),
+            cluster_centers=np.asarray(value["cluster_centers"], dtype=float),
+            pair_pool=np.asarray(value["pair_pool"], dtype=int),
+            prior=np.asarray(value["prior"], dtype=float),
+            entropy_floor=float(value["entropy_floor"]),
+            stop_rule=stop,
+            parameters=params,
+            metadata=value.get("metadata", {}),  # type: ignore[arg-type]
+        )
