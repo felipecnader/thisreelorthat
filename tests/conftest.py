@@ -27,7 +27,12 @@ def bundle() -> CatalogBundle:
         pair_pool=np.asarray([[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [10, 11]]),
         prior=np.full(8, 1 / 8),
         entropy_floor=2.0,
-        stop_rule=StopRule(top_cluster_mass=0.99, entropy_floor_multiple=0.1, min_rounds=2, base_max_rounds=3),
+        stop_rule=StopRule(
+            top_cluster_mass=0.99,
+            entropy_floor_multiple=0.5,
+            min_rounds=2,
+            base_max_rounds=3,
+        ),
         parameters=EngineParameters(),
         metadata={"c0": {"title": "Candidate Zero", "year": 2000}},
     )

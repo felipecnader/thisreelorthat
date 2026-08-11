@@ -8,6 +8,7 @@ math to a filesystem layout.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Mapping, Sequence
 
@@ -42,9 +43,15 @@ class StopRule:
     max_none_extension: int = 4
 
     def __post_init__(self) -> None:
-        if not 0 < self.top_cluster_mass <= 1:
+        if (
+            not math.isfinite(self.top_cluster_mass)
+            or not 0 < self.top_cluster_mass <= 1
+        ):
             raise ValueError("top_cluster_mass must be in (0, 1]")
-        if self.entropy_floor_multiple <= 0:
+        if (
+            not math.isfinite(self.entropy_floor_multiple)
+            or self.entropy_floor_multiple <= 0
+        ):
             raise ValueError("entropy_floor_multiple must be positive")
         if self.min_rounds < 1 or self.base_max_rounds < self.min_rounds:
             raise ValueError("invalid round bounds")
@@ -108,8 +115,18 @@ class CatalogBundle:
         total = float(self.prior.sum())
         if not np.isclose(total, 1.0, atol=1e-8):
             raise ValueError("prior must sum to one")
-        if self.entropy_floor <= 0:
+        if not math.isfinite(self.entropy_floor) or self.entropy_floor <= 0:
             raise ValueError("entropy_floor must be positive")
+        if self.entropy_floor > len(self.candidate_ids):
+            raise ValueError("entropy_floor cannot exceed the candidate count")
+        confidence_entropy_limit = (
+            self.stop_rule.entropy_floor_multiple * self.entropy_floor
+        )
+        if confidence_entropy_limit < 1.0:
+            raise ValueError(
+                "confidence entropy threshold is unreachable: "
+                "entropy_floor_multiple * entropy_floor must be at least 1.0"
+            )
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, object]) -> "CatalogBundle":

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
-import re
+import sysconfig
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +20,11 @@ def test_documented_editable_install_command() -> None:
     )
     assert match is not None, "README has no editable install command"
     editable_spec = match.group(1)
+
+    externally_managed = Path(sysconfig.get_path("stdlib")) / "EXTERNALLY-MANAGED"
+    if sys.prefix == sys.base_prefix and externally_managed.exists():
+        pytest.skip("system Python is externally managed; run this test in a virtualenv")
+
     result = subprocess.run(
         [sys.executable, "-m", "pip", "install", "-e", editable_spec],
         cwd=ROOT,

@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from api.demo import app, load_demo_bundle
+from engine import Answer, QuizEngine
 
 
 def test_demo_has_real_axis_shape_and_disjoint_catalogs() -> None:
@@ -35,3 +36,16 @@ def test_demo_runs_from_first_pair_to_ranked_pick() -> None:
     assert state["stopReason"] == "ceiling"
     assert len(state["candidates"]) == 12
     assert {"id", "title", "year", "posterior"} <= state["candidates"][0].keys()
+
+
+def test_demo_confidence_path_is_reachable() -> None:
+    engine = QuizEngine(load_demo_bundle())
+    state = engine.start()
+
+    for answer in (Answer.A, Answer.A, Answer.A, Answer.A, Answer.B, Answer.A):
+        pair = engine.next_pair(state)[:2]
+        engine.answer(state, pair, answer)
+        if state.stopped:
+            break
+
+    assert state.stop_reason == "confidence"

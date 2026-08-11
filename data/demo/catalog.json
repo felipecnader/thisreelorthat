@@ -512,7 +512,7 @@
   "entropy_floor": 2.5,
   "stop_rule": {
     "top_cluster_mass": 0.99,
-    "entropy_floor_multiple": 0.1,
+    "entropy_floor_multiple": 0.75,
     "min_rounds": 5,
     "base_max_rounds": 6,
     "max_none_extension": 0

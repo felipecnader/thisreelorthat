@@ -1,8 +1,29 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
+import pytest
 
 from engine import Answer, QuizEngine
+
+
+def test_bundle_rejects_unreachable_confidence_threshold(bundle) -> None:
+    stop_rule = replace(bundle.stop_rule, entropy_floor_multiple=0.49)
+
+    with pytest.raises(ValueError, match="confidence entropy threshold is unreachable"):
+        replace(bundle, stop_rule=stop_rule)
+
+
+def test_bundle_accepts_minimum_reachable_confidence_threshold(bundle) -> None:
+    stop_rule = replace(bundle.stop_rule, entropy_floor_multiple=0.5)
+
+    replace(bundle, stop_rule=stop_rule)
+
+
+def test_bundle_rejects_entropy_floor_above_candidate_count(bundle) -> None:
+    with pytest.raises(ValueError, match="entropy_floor cannot exceed"):
+        replace(bundle, entropy_floor=len(bundle.candidate_ids) + 0.01)
 
 
 def test_round_updates_posterior_and_never_reuses_probe(bundle) -> None:
