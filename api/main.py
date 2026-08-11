@@ -7,7 +7,6 @@ default store is process-local and intended for demos/tests only.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from threading import RLock
 from typing import Protocol
 from uuid import uuid4
@@ -46,6 +45,7 @@ class AnswerRequest(BaseModel):
 def create_app(bundle: CatalogBundle, store: SessionStore | None = None) -> FastAPI:
     engine = QuizEngine(bundle)
     sessions = store or MemorySessionStore()
+    answer_lock = RLock()
     app = FastAPI(title="ThisReelOrThat", version="0.1.0")
 
     def present(session_id: str, state: QuizState) -> dict[str, object]:
@@ -67,29 +67,35 @@ def create_app(bundle: CatalogBundle, store: SessionStore | None = None) -> Fast
     def start_session() -> dict[str, object]:
         session_id = uuid4().hex
         state = engine.start()
+        response = present(session_id, state)
         sessions.put(session_id, state)
-        return present(session_id, state)
+        return response
 
     @app.post("/sessions/{session_id}/answers")
     def record_answer(session_id: str, request: AnswerRequest) -> dict[str, object]:
-        state = sessions.get(session_id)
-        if state is None:
-            raise HTTPException(status_code=404, detail="session not found")
         choices = {"a": Answer.A, "b": Answer.B, "either": Answer.EITHER, "neither": Answer.NEITHER}
         if request.answer not in choices:
             raise HTTPException(status_code=422, detail="invalid answer")
-        try:
-            engine.answer(state, (request.left, request.right), choices[request.answer])
-        except ValueError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        sessions.put(session_id, state)
-        return present(session_id, state)
+        with answer_lock:
+            state = sessions.get(session_id)
+            if state is None:
+                raise HTTPException(status_code=404, detail="session not found")
+            try:
+                engine.answer(state, (request.left, request.right), choices[request.answer])
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            response = present(session_id, state)
+            sessions.put(session_id, state)
+            return response
 
     @app.get("/sessions/{session_id}")
     def get_session(session_id: str) -> dict[str, object]:
-        state = sessions.get(session_id)
-        if state is None:
-            raise HTTPException(status_code=404, detail="session not found")
-        return present(session_id, state)
+        with answer_lock:
+            state = sessions.get(session_id)
+            if state is None:
+                raise HTTPException(status_code=404, detail="session not found")
+            response = present(session_id, state)
+            sessions.put(session_id, state)
+            return response
 
     return app

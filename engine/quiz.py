@@ -31,6 +31,8 @@ class QuizState:
     round: int = 0
     used_probes: set[int] = field(default_factory=set)
     answers: list[Answer] = field(default_factory=list)
+    pending_pair: tuple[str, str] | None = None
+    pending_information_gain: float | None = None
     stopped: bool = False
     stop_reason: str | None = None
 
@@ -63,6 +65,9 @@ class QuizEngine:
     def next_pair(self, state: QuizState) -> tuple[str, str, float]:
         if state.stopped:
             raise ValueError("quiz has stopped")
+        if state.pending_pair is not None:
+            assert state.pending_information_gain is not None
+            return (*state.pending_pair, state.pending_information_gain)
         cluster_posterior = cluster_mass(
             state.posterior,
             self.bundle.cluster_labels,
@@ -81,11 +86,19 @@ class QuizEngine:
         if not np.isfinite(gains[index]):
             raise RuntimeError("pair pool exhausted")
         left, right = map(int, self.bundle.pair_pool[index])
-        return self.bundle.probe_ids[left], self.bundle.probe_ids[right], float(gains[index])
+        state.pending_pair = (
+            self.bundle.probe_ids[left], self.bundle.probe_ids[right]
+        )
+        state.pending_information_gain = float(gains[index])
+        return (*state.pending_pair, state.pending_information_gain)
 
     def answer(self, state: QuizState, pair: tuple[str, str], answer: Answer) -> QuizState:
         if state.stopped:
             raise ValueError("quiz has stopped")
+        if state.pending_pair is None:
+            raise ValueError("quiz has no open pair")
+        if pair != state.pending_pair:
+            raise ValueError("submitted pair is not the open pair")
         index = {slug: i for i, slug in enumerate(self.bundle.probe_ids)}
         try:
             left, right = index[pair[0]], index[pair[1]]
@@ -111,6 +124,8 @@ class QuizEngine:
         state.round += 1
         state.used_probes.update((left, right))
         state.answers.append(answer)
+        state.pending_pair = None
+        state.pending_information_gain = None
         self._apply_stop_rule(state)
         return state
 

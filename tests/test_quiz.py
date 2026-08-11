@@ -19,6 +19,24 @@ def test_round_updates_posterior_and_never_reuses_probe(bundle) -> None:
     assert {left, right}.isdisjoint({next_left, next_right})
 
 
+def test_open_pair_is_stable_and_rejects_a_different_pair(bundle) -> None:
+    engine = QuizEngine(bundle)
+    state = engine.start()
+    open_pair = engine.next_pair(state)
+    assert engine.next_pair(state) == open_pair
+
+    different = next(
+        (bundle.probe_ids[int(left)], bundle.probe_ids[int(right)])
+        for left, right in bundle.pair_pool
+        if (bundle.probe_ids[int(left)], bundle.probe_ids[int(right)])
+        != open_pair[:2]
+    )
+    with np.testing.assert_raises_regex(ValueError, "not the open pair"):
+        engine.answer(state, different, Answer.A)
+    assert state.round == 0
+    assert engine.next_pair(state) == open_pair
+
+
 def test_catalog_specific_ceiling_extends_for_neither(bundle) -> None:
     engine = QuizEngine(bundle)
     state = engine.start()

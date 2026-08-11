@@ -36,7 +36,7 @@ Those private-deployment features require further extraction; their description 
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install -e '.[test]'
+python -m pip install -e '.[api,dev]'
 pytest
 uvicorn api.demo:app --reload
 ```
