@@ -12,7 +12,7 @@ The published implementation includes:
 
 - validated, catalog-specific bundles with separate probes and candidates;
 - four-answer likelihood (`A`, `B`, `either`, `neither`), tempered posterior updates and cluster-entropy information gain;
-- maximum-EIG pair selection without probe reuse;
+- seeded near-optimal pair selection without probe reuse;
 - catalog-specific confidence/ceiling stopping;
 - ranked candidates through a three-endpoint FastAPI adapter;
 - injected session storage via the `SessionStore` protocol;
@@ -25,7 +25,7 @@ The current private deployment additionally has features that are **described in
 - coarse-to-fine pair selection;
 - the conditioned A/B information-gain floor;
 - refused-region filtering;
-- seeded near-optimal variety bands and cross-session reuse policy;
+- cross-session reuse and vivacity policy inside the variety band;
 - build-time personal probe blocklists;
 - eligibility masking, franchise dedupe, frozen single-pick delivery and “another one”.
 
@@ -133,7 +133,11 @@ Calibrated: κ = 3.5, evidence cap 1.25, σ_tie 0.55, "neither" strength 2.0.
 
 ### Pair selection in the private deployment
 
-Expected reduction in the cluster posterior's entropy, computed in closed form from the likelihood table. **No per-axis uncertainty ledger** — axes are correlated, so tracking "which axis is least certain" double-counts and wastes questions. Variety comes from sampling within a 3% band of optimal, seeded by session hash.
+Expected reduction in the cluster posterior's entropy, computed in closed form from the likelihood table. **No per-axis uncertainty ledger** — axes are correlated, so tracking "which axis is least certain" double-counts and wastes questions.
+
+Variety in the public and private engines comes from a deterministic exponential race inside a near-optimal EIG band. The bundle carries both parameters: production currently uses `near_optimal_epsilon = 0.10` and `opening_min_candidates = 10`. At the opening, the selector expands a smaller band to the ten best admissible pairs before drawing. The seed is stable per session and pair (`sha256(session_id:min_probe_index:max_probe_index)`), so a session replays exactly while different sessions can open differently.
+
+The original offline sweep tested ε = 0, 0.03 and 0.05. ε = 0.05 retained 91.6% semantic accuracy versus 93.0% at argmax while increasing distinct first pairs from 1 to 18 in the first 50 sessions. Later operational diagnosis found the effective 3% opening band had only three pairs and repeated across sessions; production widened it to 10% and added the explicit minimum of ten. The public engine uses uniform race weights. Production's soft cross-session reuse, exploration and vivacity weights remain private.
 
 ### Stopping
 

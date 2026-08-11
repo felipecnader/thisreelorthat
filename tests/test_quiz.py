@@ -26,6 +26,25 @@ def test_bundle_rejects_entropy_floor_above_candidate_count(bundle) -> None:
         replace(bundle, entropy_floor=len(bundle.candidate_ids) + 0.01)
 
 
+def test_bundle_rejects_invalid_variety_parameters(bundle) -> None:
+    with pytest.raises(ValueError, match="near_optimal_epsilon"):
+        replace(bundle, near_optimal_epsilon=0)
+    with pytest.raises(ValueError, match="cannot exceed pair_pool"):
+        replace(bundle, opening_min_candidates=len(bundle.pair_pool) + 1)
+
+
+def test_same_seed_replays_and_different_seeds_vary_opening(bundle) -> None:
+    engine = QuizEngine(bundle)
+    expected = engine.next_pair(engine.start("same-session"))
+    assert engine.next_pair(engine.start("same-session")) == expected
+
+    openings = {
+        engine.next_pair(engine.start(f"session-{index}"))[:2]
+        for index in range(20)
+    }
+    assert len(openings) > 1
+
+
 def test_round_updates_posterior_and_never_reuses_probe(bundle) -> None:
     engine = QuizEngine(bundle)
     state = engine.start()

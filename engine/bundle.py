@@ -69,6 +69,8 @@ class CatalogBundle:
     prior: FloatArray
     entropy_floor: float
     stop_rule: StopRule
+    near_optimal_epsilon: float = 0.10
+    opening_min_candidates: int = 10
     parameters: EngineParameters = field(default_factory=EngineParameters)
     metadata: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
 
@@ -108,6 +110,15 @@ class CatalogBundle:
             raise ValueError("pair_pool contains an invalid probe index")
         if np.any(self.pair_pool[:, 0] == self.pair_pool[:, 1]):
             raise ValueError("a probe cannot be paired with itself")
+        if (
+            not math.isfinite(self.near_optimal_epsilon)
+            or not 0 < self.near_optimal_epsilon < 1
+        ):
+            raise ValueError("near_optimal_epsilon must be in (0, 1)")
+        if self.opening_min_candidates < 1:
+            raise ValueError("opening_min_candidates must be positive")
+        if self.opening_min_candidates > len(self.pair_pool):
+            raise ValueError("opening_min_candidates cannot exceed pair_pool size")
         if self.prior.shape != (len(self.candidate_ids),):
             raise ValueError("prior shape does not match candidates")
         if not np.all(np.isfinite(self.prior)) or np.any(self.prior <= 0):
@@ -144,6 +155,8 @@ class CatalogBundle:
             prior=np.asarray(value["prior"], dtype=float),
             entropy_floor=float(value["entropy_floor"]),
             stop_rule=stop,
+            near_optimal_epsilon=float(value.get("near_optimal_epsilon", 0.10)),
+            opening_min_candidates=int(value.get("opening_min_candidates", 10)),
             parameters=params,
             metadata=value.get("metadata", {}),  # type: ignore[arg-type]
         )

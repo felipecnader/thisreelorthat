@@ -16,6 +16,7 @@ from .math import (
     pair_features,
     update,
 )
+from .selection import near_optimal_index
 
 
 class Answer(IntEnum):
@@ -28,6 +29,7 @@ class Answer(IntEnum):
 @dataclass
 class QuizState:
     posterior: np.ndarray
+    selection_seed: str = "reference"
     round: int = 0
     used_probes: set[int] = field(default_factory=set)
     answers: list[Answer] = field(default_factory=list)
@@ -59,8 +61,13 @@ class QuizEngine:
             )
         self._cluster_likelihoods = np.asarray(rows)
 
-    def start(self) -> QuizState:
-        return QuizState(posterior=self.bundle.prior.copy())
+    def start(self, selection_seed: str = "reference") -> QuizState:
+        if not selection_seed:
+            raise ValueError("selection_seed must not be empty")
+        return QuizState(
+            posterior=self.bundle.prior.copy(),
+            selection_seed=selection_seed,
+        )
 
     def next_pair(self, state: QuizState) -> tuple[str, str, float]:
         if state.stopped:
@@ -82,9 +89,14 @@ class QuizEngine:
                 ]
             )
             gains[unavailable] = -np.inf
-        index = int(np.argmax(gains))
-        if not np.isfinite(gains[index]):
-            raise RuntimeError("pair pool exhausted")
+        index = near_optimal_index(
+            gains,
+            self.bundle.pair_pool,
+            epsilon=self.bundle.near_optimal_epsilon,
+            opening_min_candidates=self.bundle.opening_min_candidates,
+            selection_seed=state.selection_seed,
+            round_number=state.round + 1,
+        )
         left, right = map(int, self.bundle.pair_pool[index])
         state.pending_pair = (
             self.bundle.probe_ids[left], self.bundle.probe_ids[right]

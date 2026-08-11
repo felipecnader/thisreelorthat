@@ -66,7 +66,7 @@ def create_app(bundle: CatalogBundle, store: SessionStore | None = None) -> Fast
     @app.post("/sessions", status_code=201)
     def start_session() -> dict[str, object]:
         session_id = uuid4().hex
-        state = engine.start()
+        state = engine.start(session_id)
         response = present(session_id, state)
         sessions.put(session_id, state)
         return response
