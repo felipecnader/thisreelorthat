@@ -1,10 +1,51 @@
 # ThisReelOrThat
 
-**An adaptive this-or-that quiz that infers what you want to watch tonight — in 5–14 taps, with zero LLM calls at quiz time.**
+**A public reference implementation of an adaptive this-or-that movie quiz.**
 
-You answer a short sequence of "this or that" pairs built from films you've already seen. Each answer updates a Bayesian posterior over a catalog of films you *haven't* seen. The quiz stops when confidence crosses a threshold and returns a single pick, with a button to ask for another. All AI inference happens offline in a labeling pipeline; the quiz itself is arithmetic — it feels like an interface, not a conversation.
+You answer a sequence of movie pairs. Each answer updates a Bayesian posterior over a separate candidate catalog. The published API stops on a catalog-specific confidence rule or round ceiling and returns a ranked candidate list. It makes no model calls at quiz time.
 
-> **Read this first.** This is an honest engineering log as much as a product. The engine works, is fully instrumented, and beats random. It has **not** been shown to beat the much simpler baseline of "just recommend from my taste profile, no questions asked." Eight mechanism hypotheses were tested and refuted; one intervention produced a large replicated gain. All of it is documented in [`DECISIONS.md`](DECISIONS.md), including the failures. If you're here for the research value, the failures are the research value.
+> **Implementation status.** The code in this repository is a clean-room reference core extracted from an older engine generation. It is runnable, but it is **not** the current private deployment. The research and design record below describes both generations; features present only in the private deployment are identified explicitly.
+
+## What this repository executes
+
+The published implementation includes:
+
+- validated, catalog-specific bundles with separate probes and candidates;
+- four-answer likelihood (`A`, `B`, `either`, `neither`), tempered posterior updates and cluster-entropy information gain;
+- maximum-EIG pair selection without probe reuse;
+- catalog-specific confidence/ceiling stopping;
+- ranked candidates through a three-endpoint FastAPI adapter;
+- injected session storage via the `SessionStore` protocol;
+- a complete 12-axis demo bundle and end-to-end test.
+
+The current private deployment additionally has features that are **described in this document but not implemented in the public reference core**:
+
+- semantic mood filtering and mood-prior routing;
+- semantic and optional terminal reranking;
+- coarse-to-fine pair selection;
+- the conditioned A/B information-gain floor;
+- refused-region filtering;
+- seeded near-optimal variety bands and cross-session reuse policy;
+- build-time personal probe blocklists;
+- eligibility masking, franchise dedupe, frozen single-pick delivery and “another one”.
+
+Those private-deployment features require further extraction; their description below is a design/history record, not an API guarantee for this repository.
+
+## Run the demo
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e '.[test]'
+pytest
+uvicorn api.demo:app --reload
+```
+
+Open <http://127.0.0.1:8000/docs>, call `POST /sessions`, then submit each returned pair to `POST /sessions/{session_id}/answers`. `GET /sessions/{session_id}` returns the current state. The demo deliberately reaches a ranked pick after six answers.
+
+## Research and private-deployment record
+
+What follows is the experiment and design history of the full system. Numerical results refer to the stated historical/private configurations, not automatically to the smaller public implementation.
 
 ---
 
@@ -90,7 +131,7 @@ Calibrated: κ = 3.5, evidence cap 1.25, σ_tie 0.55, "neither" strength 2.0.
 
 **"Neither" is the single most important mechanism in the system.** Forcing a choice measurably poisons the posterior: with the "neither" option removed, median target rank went from 31.5 to 45 and mean from 40 to 77 (n=50). A bad pair answered under duress injects a *confounded direction*; refusing only suppresses. This was first noticed in human sessions (0 "neither" → target at rank 252; 3 "neither" → target as pick #1) and then confirmed in ablation. If you build something like this, build the refusal button first.
 
-### Pair selection
+### Pair selection in the private deployment
 
 Expected reduction in the cluster posterior's entropy, computed in closed form from the likelihood table. **No per-axis uncertainty ledger** — axes are correlated, so tracking "which axis is least certain" double-counts and wastes questions. Variety comes from sampling within a 3% band of optimal, seeded by session hash.
 
@@ -104,7 +145,7 @@ Ask at least 5; stop when top-3 cluster mass ≥ 0.75 **and** `exp(H)/floor ≤ 
 
 `p₀ ∝ stable^0.30 · uniform^0.70`. Stable taste is a **2–3 component mixture** over highly-rated watched films, never an average — averaging bimodal taste points at a lukewarm film nobody wants. Measured: mean-vector prior scored −7.17 average log-probability, uniform −7.10, 2-cluster mixture **−5.22**. The mean lost to knowing nothing.
 
-### Delivery
+### Delivery in the private deployment
 
 **One pick, not a shortlist.** `argmax` of the posterior after eligibility masking, franchise dedupe and optional semantic reranking, with two buttons: **another one** and **I'll watch this**.
 
@@ -218,17 +259,18 @@ Synthetic personas answer by the same likelihood the engine uses, so a nonsensic
 ├── pyproject.toml                # package and test dependencies
 ├── catalog.config.json           # which lists build your recommendation catalog
 ├── data/
-│   └── labels-default-catalog.json   # 1,131 films × 12 axes, pre-labeled
+│   ├── demo/catalog.json             # runnable 12-axis demonstration bundle
+│   └── labels-default-catalog.json   # 1,131 films × 11 legacy axes
 └── LICENSE
 ```
 
-The repository now includes a clean-room implementation of the numerical engine and a deliberately small HTTP adapter. Catalog-specific runtime data is injected through `CatalogBundle`: thresholds, entropy floor, cluster structure, pair pool, priors and public metadata travel with the catalog instead of being hard-coded. No private probes, production NPZ files, session logs, agent paths or chat transport are included.
+The repository includes a clean-room implementation of the older numerical core and a deliberately small HTTP adapter. Catalog-specific runtime data is injected through `CatalogBundle`: thresholds, entropy floor, cluster structure, pair pool, priors and public metadata travel with the catalog instead of being hard-coded. No private probes, production NPZ files, session logs, agent paths or chat transport are included.
 
-Install and run the tests with `python -m pip install -e '.[test]' && pytest`. Applications create a `CatalogBundle`, call `api.main.create_app(bundle)`, and provide durable session storage for production; the bundled in-memory store is only for demos and tests.
+Applications create a `CatalogBundle`, call `api.main.create_app(bundle, store)`, and provide durable session storage for production; the bundled in-memory store is only for demos and tests.
 
 ## The pre-labeled catalog
 
-`data/labels-default-catalog.json` contains **1,131 films × 12 axes**, produced by `gpt-5.4-mini` under a frozen rubric, with the prompt hash in the file's provenance block. Sources are public lists only (Letterboxd Top 500, Top 250 Most Fans, an r/movies "watch once" list, an animation Top 250, Sight & Sound 2022), deduplicated **by TMDb ID, never by title** — remakes and homonyms break string matching. Each film records which lists include it.
+`data/labels-default-catalog.json` contains **1,131 films × 11 legacy axes**, produced under the earlier `axes-v1+comic-serious-v1` rubric. It is useful as public source data, but it is not directly loadable as a current 12-axis runtime bundle. Sources are public lists only, deduplicated **by TMDb ID, never by title**. `data/demo/catalog.json` is the runnable 12-axis example.
 
 Using it means you only pay labeling cost for films it doesn't cover — chiefly your own watched films, which are personal by definition.
 
