@@ -63,6 +63,8 @@ class CatalogBundle:
     candidate_ids: tuple[str, ...]
     probe_vectors: FloatArray
     candidate_vectors: FloatArray
+    probe_embeddings: FloatArray
+    candidate_embeddings: FloatArray
     cluster_labels: IntArray
     cluster_centers: FloatArray
     pair_pool: IntArray
@@ -71,6 +73,7 @@ class CatalogBundle:
     stop_rule: StopRule
     near_optimal_epsilon: float = 0.10
     opening_min_candidates: int = 10
+    embedding_provenance: Mapping[str, object] = field(default_factory=dict)
     parameters: EngineParameters = field(default_factory=EngineParameters)
     metadata: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
 
@@ -78,6 +81,10 @@ class CatalogBundle:
         arrays = {
             "probe_vectors": np.asarray(self.probe_vectors, dtype=float),
             "candidate_vectors": np.asarray(self.candidate_vectors, dtype=float),
+            "candidate_embeddings": np.asarray(
+                self.candidate_embeddings, dtype=float
+            ),
+            "probe_embeddings": np.asarray(self.probe_embeddings, dtype=float),
             "cluster_labels": np.asarray(self.cluster_labels, dtype=int),
             "cluster_centers": np.asarray(self.cluster_centers, dtype=float),
             "pair_pool": np.asarray(self.pair_pool, dtype=int),
@@ -96,6 +103,46 @@ class CatalogBundle:
             raise ValueError("probe vector shape does not match probe_ids")
         if self.candidate_vectors.ndim != 2 or len(self.candidate_vectors) != len(self.candidate_ids):
             raise ValueError("candidate vector shape does not match candidate_ids")
+        if (
+            self.candidate_embeddings.ndim != 2
+            or len(self.candidate_embeddings) != len(self.candidate_ids)
+            or self.candidate_embeddings.shape[1] == 0
+        ):
+            raise ValueError(
+                "candidate embedding shape does not match candidate_ids"
+            )
+        candidate_embedding_norms = np.linalg.norm(
+            self.candidate_embeddings, axis=1
+        )
+        if (
+            not np.all(np.isfinite(self.candidate_embeddings))
+            or np.any(candidate_embedding_norms <= 0)
+        ):
+            raise ValueError(
+                "candidate embeddings must be finite and have nonzero norm"
+            )
+        if (
+            self.probe_embeddings.ndim != 2
+            or len(self.probe_embeddings) != len(self.probe_ids)
+            or self.probe_embeddings.shape[1]
+            != self.candidate_embeddings.shape[1]
+        ):
+            raise ValueError(
+                "probe embeddings must match probe_ids and candidate dimension"
+            )
+        probe_embedding_norms = np.linalg.norm(self.probe_embeddings, axis=1)
+        if (
+            not np.all(np.isfinite(self.probe_embeddings))
+            or np.any(probe_embedding_norms <= 0)
+        ):
+            raise ValueError(
+                "probe embeddings must be finite and have nonzero norm"
+            )
+        for key in ("model", "template"):
+            if not str(self.embedding_provenance.get(key, "")).strip():
+                raise ValueError(
+                    f"embedding_provenance requires a nonempty {key}"
+                )
         if self.probe_vectors.shape[1] != self.candidate_vectors.shape[1]:
             raise ValueError("probe and candidate dimensions differ")
         if self.cluster_centers.ndim != 2 or self.cluster_centers.shape[1] != self.candidate_vectors.shape[1]:
@@ -149,6 +196,10 @@ class CatalogBundle:
             candidate_ids=tuple(value["candidate_ids"]),  # type: ignore[arg-type]
             probe_vectors=np.asarray(value["probe_vectors"], dtype=float),
             candidate_vectors=np.asarray(value["candidate_vectors"], dtype=float),
+            candidate_embeddings=np.asarray(
+                value["candidate_embeddings"], dtype=float
+            ),
+            probe_embeddings=np.asarray(value["probe_embeddings"], dtype=float),
             cluster_labels=np.asarray(value["cluster_labels"], dtype=int),
             cluster_centers=np.asarray(value["cluster_centers"], dtype=float),
             pair_pool=np.asarray(value["pair_pool"], dtype=int),
@@ -157,6 +208,7 @@ class CatalogBundle:
             stop_rule=stop,
             near_optimal_epsilon=float(value.get("near_optimal_epsilon", 0.10)),
             opening_min_candidates=int(value.get("opening_min_candidates", 10)),
+            embedding_provenance=value.get("embedding_provenance", {}),  # type: ignore[arg-type]
             parameters=params,
             metadata=value.get("metadata", {}),  # type: ignore[arg-type]
         )

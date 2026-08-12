@@ -10,6 +10,12 @@ make the example deterministic and short. This is not a calibrated catalog and
 must not be used to infer production quality. It contains no watched history,
 ratings, private probe list or production artifact.
 
+The 12 candidate and 12 probe embeddings are deterministic synthetic
+8-dimensional vectors. They exist only so the public demo can exercise
+semantic reranking in a later release without an API call. They are not outputs of
+`text-embedding-3-large` and carry no semantic quality claim. Their exact
+demo-only generator label is recorded in `embedding_provenance`.
+
 Because the demo has only six disjoint pairs and forbids probe reuse,
 information gain is not expected to decrease monotonically: a weak remaining
 pair can be followed by a stronger one. That small-pool behavior is useful for

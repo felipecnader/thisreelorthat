@@ -11,6 +11,8 @@ You answer a sequence of movie pairs. Each answer updates a Bayesian posterior o
 The published implementation includes:
 
 - validated, catalog-specific bundles with separate probes and candidates;
+- candidate embeddings aligned row-for-row with candidate IDs, with model and
+  exact input-template provenance carried in the bundle;
 - four-answer likelihood (`A`, `B`, `either`, `neither`), tempered posterior updates and cluster-entropy information gain;
 - seeded near-optimal pair selection without probe reuse;
 - catalog-specific confidence/ceiling stopping;
@@ -30,6 +32,24 @@ The current private deployment additionally has features that are **described in
 - eligibility masking, franchise dedupe, frozen single-pick delivery and “another one”.
 
 Those private-deployment features require further extraction; their description below is a design/history record, not an API guarantee for this repository.
+
+Bundles now carry `candidate_embeddings` as inert data for the future semantic
+reranker. Production artifacts use `text-embedding-3-large` with this exact
+template (reviews are all available excerpts joined by two newlines, or
+`[none]`):
+
+```text
+Title: {title}
+Year: {year}
+Synopsis: {synopsis}
+Reviews: {reviews_or_none}
+```
+
+`probe_embeddings` is required because quiz answers endorse or reject probes,
+and the planned reranker builds its semantic reference from those choices.
+Probe embeddings must have the same dimension as candidate embeddings. The
+demo vectors are synthetic and identified as such in
+[`data/demo/README.md`](data/demo/README.md).
 
 ## Run the demo
 

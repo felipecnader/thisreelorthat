@@ -22,6 +22,18 @@ def bundle() -> CatalogBundle:
         candidate_ids=tuple(f"c{i}" for i in range(len(candidate_vectors))),
         probe_vectors=probe_vectors,
         candidate_vectors=candidate_vectors,
+        candidate_embeddings=np.asarray([
+            [1.0, 0.0, 0.0], [0.9, 0.1, 0.0],
+            [0.0, 1.0, 0.0], [0.1, 0.9, 0.0],
+            [0.0, 0.0, 1.0], [0.1, 0.0, 0.9],
+            [0.6, 0.6, 0.1], [0.5, 0.5, 0.2],
+        ]),
+        probe_embeddings=np.asarray([
+            [1.0, 0.1, 0.1], [0.9, 0.2, 0.1], [0.8, 0.3, 0.1],
+            [0.7, 0.4, 0.1], [0.6, 0.5, 0.1], [0.5, 0.6, 0.1],
+            [0.4, 0.7, 0.1], [0.3, 0.8, 0.1], [0.2, 0.9, 0.1],
+            [0.1, 1.0, 0.1], [0.1, 0.9, 0.2], [0.1, 0.8, 0.3],
+        ]),
         cluster_labels=np.asarray([0, 0, 1, 1, 2, 2, 3, 3]),
         cluster_centers=np.asarray([[-0.8, -0.6], [0.7, 0.6], [-0.7, 0.7], [0.7, -0.7]]),
         pair_pool=np.asarray([[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [10, 11]]),
@@ -29,6 +41,10 @@ def bundle() -> CatalogBundle:
         entropy_floor=2.0,
         near_optimal_epsilon=0.10,
         opening_min_candidates=6,
+        embedding_provenance={
+            "model": "synthetic-test",
+            "template": "candidate {id}",
+        },
         stop_rule=StopRule(
             top_cluster_mass=0.99,
             entropy_floor_multiple=0.5,
