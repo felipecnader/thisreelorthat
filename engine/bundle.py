@@ -93,6 +93,25 @@ class SemanticRerank:
 
 
 @dataclass(frozen=True)
+class PhasePolicy:
+    top1_mass: float = 0.45
+    top3_mass: float = 0.70
+    coarse_min_l2: float = 1.5
+    coarse_min_high_axes: int = 2
+    fine_min_l2: float = 1.0
+    fine_min_high_axes: int = 1
+    high_axis_threshold: float = 0.8
+
+    def __post_init__(self) -> None:
+        if not 0 < self.top1_mass <= self.top3_mass <= 1:
+            raise ValueError("invalid phase mass thresholds")
+        if self.coarse_min_l2 <= 0 or self.fine_min_l2 <= 0:
+            raise ValueError("phase contrast thresholds must be positive")
+        if self.coarse_min_high_axes < 1 or self.fine_min_high_axes < 1:
+            raise ValueError("phase high-axis counts must be positive")
+
+
+@dataclass(frozen=True)
 class CatalogBundle:
     probe_ids: tuple[str, ...]
     candidate_ids: tuple[str, ...]
@@ -115,6 +134,7 @@ class CatalogBundle:
     embedding_provenance: Mapping[str, object] = field(default_factory=dict)
     eligibility: EligibilityPolicy = field(default_factory=EligibilityPolicy)
     semantic_rerank: SemanticRerank = field(default_factory=SemanticRerank)
+    phase: PhasePolicy = field(default_factory=PhasePolicy)
     parameters: EngineParameters = field(default_factory=EngineParameters)
     metadata: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
 
@@ -280,6 +300,7 @@ class CatalogBundle:
         params = EngineParameters(**value.get("parameters", {}))  # type: ignore[arg-type]
         eligibility = EligibilityPolicy(**value.get("eligibility", {}))  # type: ignore[arg-type]
         semantic = SemanticRerank(**value.get("semantic_rerank", {}))  # type: ignore[arg-type]
+        phase = PhasePolicy(**value.get("phase", {}))  # type: ignore[arg-type]
         return cls(
             probe_ids=tuple(value["probe_ids"]),  # type: ignore[arg-type]
             candidate_ids=tuple(value["candidate_ids"]),  # type: ignore[arg-type]
@@ -304,6 +325,7 @@ class CatalogBundle:
             embedding_provenance=value.get("embedding_provenance", {}),  # type: ignore[arg-type]
             eligibility=eligibility,
             semantic_rerank=semantic,
+            phase=phase,
             parameters=params,
             metadata=value.get("metadata", {}),  # type: ignore[arg-type]
         )

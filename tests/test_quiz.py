@@ -252,3 +252,28 @@ def test_semantic_rerank_uses_endorsed_minus_none_inside_window(bundle) -> None:
     assert [row["id"] for row in reranked[3:]] == [
         row["id"] for row in engine.ranked_candidates(state, 8)[3:]
     ]
+
+
+def test_phase_transition_uses_mass_without_ab_coherence(bundle) -> None:
+    engine = QuizEngine(bundle)
+    state = engine.start()
+    state.posterior = np.asarray([.45, .45, .025, .025, .025, .01, .01, .005])
+    state.answers = [Answer.NEITHER, Answer.NEITHER]
+
+    engine._apply_phase_rule(state)
+
+    assert state.phase == "fine"
+    assert state.localized_clusters
+
+
+def test_phase_stays_coarse_below_both_mass_gates(bundle) -> None:
+    from engine import PhasePolicy
+
+    engine = QuizEngine(replace(
+        bundle,
+        phase=PhasePolicy(top1_mass=.6, top3_mass=.9),
+    ))
+    state = engine.start()
+    state.posterior = np.full(8, 1 / 8)
+    engine._apply_phase_rule(state)
+    assert state.phase == "coarse"

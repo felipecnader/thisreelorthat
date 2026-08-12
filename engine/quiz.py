@@ -50,6 +50,8 @@ class QuizState:
     accepted_pick: dict[str, object] | None = None
     endorsed_probes: list[int] = field(default_factory=list)
     rejected_probes: list[int] = field(default_factory=list)
+    phase: str = "coarse"
+    localized_clusters: tuple[int, ...] = ()
 
 
 class QuizEngine:
@@ -167,10 +169,56 @@ class QuizEngine:
             self.bundle.cluster_labels,
             len(self.bundle.cluster_centers),
         )
-        gains = expected_information_gain(cluster_posterior, self._cluster_likelihoods)
-        gains_ab = conditioned_information_gain(
-            cluster_posterior, self._cluster_likelihoods
+        pair_pool = self.bundle.pair_pool
+        contrast = np.abs(
+            self.bundle.probe_vectors[pair_pool[:, 0]]
+            - self.bundle.probe_vectors[pair_pool[:, 1]]
         )
+        l2 = np.linalg.norm(contrast, axis=1)
+        high_axes = np.sum(contrast > self.bundle.phase.high_axis_threshold, axis=1)
+        probe_clusters = np.argmin(
+            np.sum((
+                self.bundle.probe_vectors[:, None, :]
+                - self.bundle.cluster_centers[None, :, :]
+            ) ** 2, axis=2), axis=1,
+        )
+        if state.phase == "fine":
+            region = np.isin(self.bundle.cluster_labels, state.localized_clusters)
+            acquisition = np.where(region, state.posterior, 0.0)
+            acquisition /= acquisition.sum()
+            tables = []
+            for left, right in pair_pool:
+                preference, shared = pair_features(
+                    self.bundle.candidate_vectors,
+                    self.bundle.probe_vectors[int(left)],
+                    self.bundle.probe_vectors[int(right)],
+                )
+                tables.append(likelihood(
+                    preference, shared, kappa=self.bundle.parameters.kappa,
+                    evidence_cap=self.bundle.parameters.evidence_cap,
+                    tie_sigma=self.bundle.parameters.tie_sigma,
+                ))
+            tables = np.asarray(tables)
+            gains = expected_information_gain(acquisition, tables)
+            gains_ab = conditioned_information_gain(acquisition, tables)
+            admissible = (
+                np.isin(probe_clusters[pair_pool[:, 0]], state.localized_clusters)
+                & np.isin(probe_clusters[pair_pool[:, 1]], state.localized_clusters)
+                & (l2 >= self.bundle.phase.fine_min_l2)
+                & (high_axes >= self.bundle.phase.fine_min_high_axes)
+            )
+        else:
+            gains = expected_information_gain(cluster_posterior, self._cluster_likelihoods)
+            gains_ab = conditioned_information_gain(cluster_posterior, self._cluster_likelihoods)
+            admissible = (
+                (probe_clusters[pair_pool[:, 0]] != probe_clusters[pair_pool[:, 1]])
+                & (l2 >= self.bundle.phase.coarse_min_l2)
+                & (high_axes >= self.bundle.phase.coarse_min_high_axes)
+            )
+        if not np.any(admissible):
+            admissible = np.ones(len(pair_pool), dtype=bool)
+        gains[~admissible] = -np.inf
+        gains_ab[~admissible] = -np.inf
         if state.used_probes:
             unavailable = np.asarray(
                 [
@@ -180,6 +228,10 @@ class QuizEngine:
             )
             gains[unavailable] = -np.inf
             gains_ab[unavailable] = -np.inf
+        if state.phase == "fine" and not np.any(np.isfinite(gains)):
+            state.phase = "coarse"
+            state.localized_clusters = ()
+            return self.next_pair(state)
         index = near_optimal_index(
             gains,
             self.bundle.pair_pool,
@@ -238,7 +290,21 @@ class QuizEngine:
         state.pending_pair = None
         state.pending_information_gain = None
         self._apply_stop_rule(state)
+        self._apply_phase_rule(state)
         return state
+
+    def _apply_phase_rule(self, state: QuizState) -> None:
+        pc = cluster_mass(
+            state.posterior, self.bundle.cluster_labels,
+            len(self.bundle.cluster_centers),
+        )
+        top = np.argsort(pc)[::-1][:3]
+        localized = (
+            float(pc[top[0]]) >= self.bundle.phase.top1_mass
+            or float(pc[top].sum()) >= self.bundle.phase.top3_mass
+        )
+        state.phase = "fine" if localized else "coarse"
+        state.localized_clusters = tuple(map(int, top)) if localized else ()
 
     def metrics(self, state: QuizState) -> dict[str, float | bool]:
         pc = cluster_mass(

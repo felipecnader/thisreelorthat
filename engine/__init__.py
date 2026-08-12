@@ -1,6 +1,6 @@
 """Public, transport-agnostic ThisReelOrThat quiz engine."""
 
-from .bundle import CatalogBundle, EligibilityPolicy, EngineParameters, SemanticRerank, StopRule
+from .bundle import CatalogBundle, EligibilityPolicy, EngineParameters, PhasePolicy, SemanticRerank, StopRule
 from .quiz import Answer, QuizEngine, QuizState
 
 __all__ = [
@@ -9,6 +9,7 @@ __all__ = [
     "EligibilityPolicy",
     "EngineParameters",
     "QuizEngine",
+    "PhasePolicy",
     "QuizState",
     "SemanticRerank",
     "StopRule",

@@ -105,6 +105,15 @@
       "calibration": "Mechanics-only demo. Production uses text-embedding-3-large and window 60."
     }
   },
+  "phase": {
+    "top1_mass": 0.45,
+    "top3_mass": 0.70,
+    "coarse_min_l2": 1.5,
+    "coarse_min_high_axes": 2,
+    "fine_min_l2": 1.0,
+    "fine_min_high_axes": 1,
+    "high_axis_threshold": 0.8
+  },
   "probe_vectors": [
     [
       -0.25,

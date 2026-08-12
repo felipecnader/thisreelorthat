@@ -18,6 +18,7 @@ The published implementation includes:
 - four-answer likelihood (`A`, `B`, `either`, `neither`), tempered posterior updates and cluster-entropy information gain;
 - seeded near-optimal pair selection without probe reuse;
 - conditioned A/B information-gain floor before the variety band;
+- mass-gated coarse-to-fine question phases;
 - catalog-specific confidence/ceiling stopping;
 - frozen single-pick delivery with a skip cursor through the FastAPI adapter;
 - injected session storage via the `SessionStore` protocol;
@@ -27,7 +28,6 @@ The current private deployment additionally has features that are **described in
 
 - semantic mood filtering and mood-prior routing;
 - optional terminal LLM reranking;
-- coarse-to-fine pair selection;
 - refused-region filtering;
 - cross-session reuse and vivacity policy inside the variety band;
 - build-time personal probe blocklists;
@@ -98,6 +98,15 @@ exactly one `candidate_attributes` record per candidate. The supported
 attributes are TMDB genres, popularity and runtime; missing values are explicit
 `null`, never zero. Budget is intentionally absent because its 71.6% coverage
 would turn missing data into an exclusion criterion.
+
+Question selection begins coarse: cross-cluster pairs with L2 at least 1.5 and
+at least two axes above 0.8 contrast. It moves to fine when top-1 cluster mass
+reaches 0.45 or top-3 mass reaches 0.70, using only this mass gate. Fine pairs
+stay inside the localized region with L2 at least 1.0 and one high-contrast
+axis. The two-consistent-A/B gate remains a delivery-confidence rule; using it
+for phase transition stranded the earlier K=80 runtime in 82 coarse rounds and
+zero fine rounds. The asymmetric choice is intentional: one premature fine
+question is cheaper than an unsupported delivery.
 
 ## Run the demo
 
