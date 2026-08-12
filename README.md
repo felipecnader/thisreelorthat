@@ -159,6 +159,12 @@ Variety in the public and private engines comes from a deterministic exponential
 
 The original offline sweep tested ε = 0, 0.03 and 0.05. ε = 0.05 retained 91.6% semantic accuracy versus 93.0% at argmax while increasing distinct first pairs from 1 to 18 in the first 50 sessions. Later operational diagnosis found the effective 3% opening band had only three pairs and repeated across sessions; production widened it to 10% and added the explicit minimum of ten. The public engine uses uniform race weights. Production's soft cross-session reuse, exploration and vivacity weights remain private.
 
+The frozen equivalence gate first proved its value by rejecting an incorrect
+extraction specification rather than an implementation bug: the proposed seed
+was `hash(session_id, round)`, while production actually hashes the session and
+each pair's probe indices. The public extraction follows the observed
+production behavior deliberately; the mismatch was not silently normalized.
+
 ### Stopping
 
 Ask at least 5; stop when top-3 cluster mass ≥ 0.75 **and** `exp(H)/floor ≤ 2.0`; hard ceiling at 10 + min(neither-count, 4).
