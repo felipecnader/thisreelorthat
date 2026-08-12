@@ -20,6 +20,7 @@ The published implementation includes:
 - conditioned A/B information-gain floor before the variety band;
 - mass-gated coarse-to-fine question phases;
 - active refused-region and repeated-dominant-axis history filters;
+- pure multi-route mood scoring with a conjunctive top-N mask and small-set direct pick;
 - catalog-specific confidence/ceiling stopping;
 - frozen single-pick delivery with a skip cursor through the FastAPI adapter;
 - injected session storage via the `SessionStore` protocol;
@@ -27,7 +28,6 @@ The published implementation includes:
 
 The current private deployment additionally has features that are **described in this document but not implemented in the public reference core**:
 
-- semantic mood filtering and mood-prior routing;
 - optional terminal LLM reranking;
 - cross-session reuse and vivacity policy inside the variety band;
 - build-time personal probe blocklists;
@@ -98,6 +98,33 @@ exactly one `candidate_attributes` record per candidate. The supported
 attributes are TMDB genres, popularity and runtime; missing values are explicit
 `null`, never zero. Budget is intentionally absent because its 71.6% coverage
 would turn missing data into an exclusion criterion.
+
+Declared mood is decomposed outside the numerical engine by injected
+`MoodProvider.decompose(text)` and `EmbeddingProvider.embed(text)` interfaces.
+Providers own credentials, retries and caches; the engine receives only typed
+components and normalized vectors. It supports `axis`, `embedding`, `genre`,
+`metadata` (popularity/runtime), and `unrepresentable`. The last route is
+ignored with a user warning rather than approximated with an invented proxy.
+
+Each component is normalized to a comparable candidate score and components
+combine by **minimum**, not average: every requested property must be present.
+The hard mask retains `max(250, 20% of catalog)` candidates in production;
+explicit factual genres may intentionally produce smaller sets. Below 150 the
+state carries a warning, and below 60 the quiz stops immediately for a stable
+pick. Duration and mood masks intersect before ranking, after which entropy
+floor and within-cluster delta are recomputed on the final support.
+
+The frozen mood gate covers all five route values across seven scenarios and
+67 rounds, including the 22-film western direct-pick path and an
+`unrepresentable` warning. It does **not** cover: a request containing only
+unrepresentable components; an absent provider embedding; an embedding
+dimension error; a genre with zero catalog matches; metadata `low`; runtime
+metadata; missing/partial metadata coverage; an empty duration×mood
+intersection; or invalid component/policy inputs. Those branches have focused
+unit coverage only for unrepresentable-only fail-open, missing metadata,
+provider-vector injection, invalid policy, and small factual direct-pick.
+The remaining listed branches are explicitly unexercised; none is claimed as
+production-trace coverage.
 
 Question selection begins coarse: cross-cluster pairs with L2 at least 1.5 and
 at least two axes above 0.8 contrast. It moves to fine when top-1 cluster mass

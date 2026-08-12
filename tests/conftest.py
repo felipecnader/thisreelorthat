@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from engine import CatalogBundle, EligibilityPolicy, EngineParameters, SemanticRerank, StopRule
+from engine import CatalogBundle, EligibilityPolicy, EngineParameters, MoodFilterPolicy, SemanticRerank, StopRule
 
 
 @pytest.fixture
@@ -60,6 +60,9 @@ def bundle() -> CatalogBundle:
             "template": "candidate {id}",
         },
         eligibility=EligibilityPolicy(sanity_floor=3, direct_pick_below=2),
+        mood_filter=MoodFilterPolicy(
+            minimum_candidates=4, catalog_fraction=0.20, small_set_alert=3,
+        ),
         semantic_rerank=SemanticRerank(
             model="synthetic-test",
             window=3,

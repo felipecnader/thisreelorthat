@@ -1131,6 +1131,32 @@ per-pair hash, and `A/B gain / total gain` instead of 50% of the best competing
 conditioned A/B gain. These are positive gate outcomes: observed behavior wins
 over a plausible but incorrect written reconstruction.
 
+The mood corpus added a third correction of remembered specification. Under
+the current production provider, “filme de máfia” routes as genre+embedding,
+not embedding-only, while “épico histórico” routes as axis+genre, not
+axis+embedding. The public extraction follows the frozen provider output and
+adds separate pure-axis and pure-embedding scenarios instead of rewriting the
+observed routes to fit the earlier description.
+
+## 2026-08-12 — Mood is conjunctive and providers stay outside the engine
+
+Mood components combine by minimum. Averaging would let high scale compensate
+for low cerebral demand (or the reverse), making The Conversation and The Raid
+tie a candidate such as Oppenheimer that satisfies both requirements. The hard
+mask is therefore an intersection-like ranking policy, not a soft blend.
+
+Free-text decomposition and embedding are injected provider responsibilities.
+The numerical engine contains no key, cache, path or model call. Production's
+normalized float32 embeddings retain their dot-product cosine contract; doing
+a second normalization inside the scorer changed a stable catalog tie by one
+percentile position and failed the frozen gate.
+
+Across seven mood scenarios and 67 rounds, mood plus active pair filters left a
+median 119 admissible pairs and minimum 1. Since the predeclared intervention
+threshold was a median below roughly 30, the refused-region relaxation ladder
+remains 0.75/0.60/0.45/0.30. One scenario, western with 22 candidates, exercised
+the below-60 direct-pick path.
+
 ## 2026-08-12 — History filters are active with graded fail-open
 
 `neither` stores the shared pair midpoint. Later questions exclude nearby

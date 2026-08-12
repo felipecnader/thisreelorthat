@@ -12,7 +12,8 @@ ratings, private probe list or production artifact.
 
 The 12 candidate and 12 probe embeddings are deterministic synthetic
 8-dimensional vectors. They exist only so the public demo can exercise
-semantic reranking in a later release without an API call. They are not outputs of
+semantic reranking and mood-filter mechanics without an API call. Any mood
+test over these vectors verifies plumbing, not recommendation quality. They are not outputs of
 `text-embedding-3-large` and carry no semantic quality claim. Their exact
 demo-only generator label is recorded in `embedding_provenance`.
 

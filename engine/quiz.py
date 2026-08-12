@@ -19,6 +19,7 @@ from .math import (
 )
 from .selection import near_optimal_index
 from .rerank import semantic_order
+from .mood import PreparedMood, mood_mask
 
 
 class Answer(IntEnum):
@@ -54,6 +55,8 @@ class QuizState:
     localized_clusters: tuple[int, ...] = ()
     refused_midpoints: list[np.ndarray] = field(default_factory=list)
     recent_dominant_axes: list[int] = field(default_factory=list)
+    mood_warning: str | None = None
+    mood_audit: dict[str, object] = field(default_factory=dict)
 
 
 class QuizEngine:
@@ -83,10 +86,18 @@ class QuizEngine:
         selection_seed: str = "reference",
         *,
         duration_ceiling: int | None = None,
+        mood: PreparedMood | None = None,
     ) -> QuizState:
         if not selection_seed:
             raise ValueError("selection_seed must not be empty")
         mask = self.eligibility_mask(duration_ceiling=duration_ceiling)
+        mood_warning = None
+        mood_audit: dict[str, object] = {"applied": False, "reason": "not_requested"}
+        if mood is not None:
+            mood_result = mood_mask(self.bundle, mood)
+            mask &= mood_result.mask
+            mood_warning = mood_result.warning
+            mood_audit = mood_result.audit
         count = int(mask.sum())
         if count == 0:
             raise ValueError("eligibility mask removed every candidate")
@@ -114,6 +125,8 @@ class QuizEngine:
                 if count < self.bundle.eligibility.direct_pick_below
                 else None
             ),
+            mood_warning=mood_warning,
+            mood_audit=mood_audit,
         )
 
     def eligibility_mask(
@@ -217,6 +230,8 @@ class QuizEngine:
                 & (l2 >= self.bundle.phase.coarse_min_l2)
                 & (high_axes >= self.bundle.phase.coarse_min_high_axes)
             )
+        unfiltered_gains = gains.copy()
+        unfiltered_gains_ab = gains_ab.copy()
         if not np.any(admissible):
             admissible = np.ones(len(pair_pool), dtype=bool)
         if state.refused_midpoints:
@@ -258,6 +273,15 @@ class QuizEngine:
             state.phase = "coarse"
             state.localized_clusters = ()
             return self.next_pair(state)
+        if not np.any(np.isfinite(gains)):
+            # Structural/history filters are fail-open when every surviving
+            # alternative has already been consumed. Preserve no-reuse and ask
+            # the only remaining pair rather than stranding the session.
+            gains = unfiltered_gains
+            gains_ab = unfiltered_gains_ab
+            if state.used_probes:
+                gains[unavailable] = -np.inf
+                gains_ab[unavailable] = -np.inf
         index = near_optimal_index(
             gains,
             self.bundle.pair_pool,
@@ -477,3 +501,9 @@ class QuizEngine:
         elif state.round >= ceiling:
             state.stopped = True
             state.stop_reason = "ceiling"
+        elif not any(
+            int(left) not in state.used_probes and int(right) not in state.used_probes
+            for left, right in self.bundle.pair_pool
+        ):
+            state.stopped = True
+            state.stop_reason = "pair_pool_exhausted"

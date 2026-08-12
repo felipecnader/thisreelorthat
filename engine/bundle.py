@@ -134,6 +134,28 @@ class SelectionHistoryPolicy:
 
 
 @dataclass(frozen=True)
+class MoodFilterPolicy:
+    minimum_candidates: int = 250
+    catalog_fraction: float = 0.20
+    small_set_alert: int = 150
+    provenance: Mapping[str, object] = field(default_factory=lambda: {
+        "decision": "production hard-mask policy",
+        "calibration": "top max(250, 20% of catalog); factual genres may be smaller",
+    })
+
+    def __post_init__(self) -> None:
+        if self.minimum_candidates < 1:
+            raise ValueError("mood minimum_candidates must be positive")
+        if not 0 < self.catalog_fraction <= 1:
+            raise ValueError("mood catalog_fraction must be in (0, 1]")
+        if self.small_set_alert < 1:
+            raise ValueError("mood small_set_alert must be positive")
+        for key in ("decision", "calibration"):
+            if not str(self.provenance.get(key, "")).strip():
+                raise ValueError(f"mood filter provenance requires a nonempty {key}")
+
+
+@dataclass(frozen=True)
 class CatalogBundle:
     probe_ids: tuple[str, ...]
     candidate_ids: tuple[str, ...]
@@ -158,6 +180,7 @@ class CatalogBundle:
     semantic_rerank: SemanticRerank = field(default_factory=SemanticRerank)
     phase: PhasePolicy = field(default_factory=PhasePolicy)
     selection_history: SelectionHistoryPolicy = field(default_factory=SelectionHistoryPolicy)
+    mood_filter: MoodFilterPolicy = field(default_factory=MoodFilterPolicy)
     parameters: EngineParameters = field(default_factory=EngineParameters)
     metadata: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
 
@@ -307,6 +330,8 @@ class CatalogBundle:
             )
         if self.semantic_rerank.model != self.embedding_provenance.get("model"):
             raise ValueError("semantic rerank model must match embedding model")
+        if self.mood_filter.minimum_candidates > len(self.candidate_ids):
+            raise ValueError("mood minimum_candidates cannot exceed candidate count")
         confidence_entropy_limit = (
             self.stop_rule.entropy_floor_multiple * self.entropy_floor
         )
@@ -325,6 +350,7 @@ class CatalogBundle:
         semantic = SemanticRerank(**value.get("semantic_rerank", {}))  # type: ignore[arg-type]
         phase = PhasePolicy(**value.get("phase", {}))  # type: ignore[arg-type]
         history = SelectionHistoryPolicy(**value.get("selection_history", {}))  # type: ignore[arg-type]
+        mood_filter = MoodFilterPolicy(**value.get("mood_filter", {}))  # type: ignore[arg-type]
         return cls(
             probe_ids=tuple(value["probe_ids"]),  # type: ignore[arg-type]
             candidate_ids=tuple(value["candidate_ids"]),  # type: ignore[arg-type]
@@ -351,6 +377,7 @@ class CatalogBundle:
             semantic_rerank=semantic,
             phase=phase,
             selection_history=history,
+            mood_filter=mood_filter,
             parameters=params,
             metadata=value.get("metadata", {}),  # type: ignore[arg-type]
         )

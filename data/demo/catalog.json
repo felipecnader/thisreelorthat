@@ -118,6 +118,15 @@
     "refused_rms_thresholds": [0.75, 0.60, 0.45, 0.30],
     "repeated_axis_lookback": 2
   },
+  "mood_filter": {
+    "minimum_candidates": 8,
+    "catalog_fraction": 0.2,
+    "small_set_alert": 6,
+    "provenance": {
+      "decision": "Mechanics-only demo scaled down from production policy.",
+      "calibration": "Production uses max(250, 20% of catalog); demo uses 8 of 12."
+    }
+  },
   "probe_vectors": [
     [
       -0.25,
