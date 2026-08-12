@@ -18,6 +18,7 @@ from .math import (
     update,
 )
 from .selection import near_optimal_index
+from .rerank import semantic_order
 
 
 class Answer(IntEnum):
@@ -47,6 +48,8 @@ class QuizState:
     pick_cursor: int = 0
     pick_skips: list[dict[str, object]] = field(default_factory=list)
     accepted_pick: dict[str, object] | None = None
+    endorsed_probes: list[int] = field(default_factory=list)
+    rejected_probes: list[int] = field(default_factory=list)
 
 
 class QuizEngine:
@@ -226,6 +229,12 @@ class QuizEngine:
         state.round += 1
         state.used_probes.update((left, right))
         state.answers.append(answer)
+        if answer is Answer.A:
+            state.endorsed_probes.append(left)
+        elif answer is Answer.B:
+            state.endorsed_probes.append(right)
+        elif answer is Answer.NEITHER:
+            state.rejected_probes.extend((left, right))
         state.pending_pair = None
         state.pending_information_gain = None
         self._apply_stop_rule(state)
@@ -277,6 +286,7 @@ class QuizEngine:
         ranked = self.ranked_candidates(
             state, limit=int(state.eligibility_mask.sum())
         )
+        ranked = self._semantic_order(state, ranked)
         seen_franchises: set[str] = set()
         frozen = []
         for rank_position, row in enumerate(ranked, start=1):
@@ -297,6 +307,33 @@ class QuizEngine:
             raise ValueError("no eligible candidate remains for pick")
         state.frozen_pick_order = frozen
         return frozen
+
+    def _semantic_order(
+        self, state: QuizState, ranked: list[dict[str, object]]
+    ) -> list[dict[str, object]]:
+        config = self.bundle.semantic_rerank
+        if (
+            len(ranked) < config.disable_below_eligible
+            or not state.endorsed_probes
+        ):
+            return ranked
+        candidate_index = {
+            candidate_id: index
+            for index, candidate_id in enumerate(self.bundle.candidate_ids)
+        }
+        posterior_order = np.asarray([
+            candidate_index[str(row["id"])] for row in ranked
+        ])
+        ordered_indices = semantic_order(
+            posterior_order,
+            self.bundle.candidate_embeddings,
+            self.bundle.probe_embeddings,
+            state.endorsed_probes,
+            state.rejected_probes,
+            window=config.window,
+        )
+        rows = {candidate_index[str(row["id"])]: row for row in ranked}
+        return [rows[int(index)] for index in ordered_indices]
 
     def current_pick(self, state: QuizState) -> dict[str, object]:
         order = self.prepare_pick_order(state)

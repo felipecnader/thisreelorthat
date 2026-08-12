@@ -234,3 +234,21 @@ def test_only_explicit_acceptance_counts(bundle) -> None:
     accepted = engine.accept_pick(state)
 
     assert accepted == state.accepted_pick
+
+
+def test_semantic_rerank_uses_endorsed_minus_none_inside_window(bundle) -> None:
+    engine = QuizEngine(bundle)
+    state = engine.start()
+    state.stopped = True
+    state.posterior = np.asarray([.30, .25, .20, .10, .06, .04, .03, .02])
+    state.endorsed_probes = [1]
+    state.rejected_probes = [0]
+    posterior_top3 = [row["id"] for row in engine.ranked_candidates(state, 3)]
+
+    reranked = engine.prepare_pick_order(state)
+
+    assert {row["id"] for row in reranked[:3]} == set(posterior_top3)
+    assert [row["id"] for row in reranked[:3]] != posterior_top3
+    assert [row["id"] for row in reranked[3:]] == [
+        row["id"] for row in engine.ranked_candidates(state, 8)[3:]
+    ]

@@ -72,6 +72,27 @@ class EligibilityPolicy:
 
 
 @dataclass(frozen=True)
+class SemanticRerank:
+    model: str = "text-embedding-3-large"
+    reference: str = "endorsed_minus_none"
+    window: int = 60
+    disable_below_eligible: int = 250
+    provenance: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.model.strip():
+            raise ValueError("semantic rerank model must not be empty")
+        if self.reference != "endorsed_minus_none":
+            raise ValueError("semantic rerank reference must be endorsed_minus_none")
+        if self.window < 1:
+            raise ValueError("semantic rerank window must be positive")
+        if self.disable_below_eligible < 1:
+            raise ValueError("semantic disable floor must be positive")
+        if not str(self.provenance.get("calibration", "")).strip():
+            raise ValueError("semantic rerank provenance requires calibration")
+
+
+@dataclass(frozen=True)
 class CatalogBundle:
     probe_ids: tuple[str, ...]
     candidate_ids: tuple[str, ...]
@@ -91,6 +112,7 @@ class CatalogBundle:
     ab_eig_provenance: Mapping[str, object] = field(default_factory=dict)
     embedding_provenance: Mapping[str, object] = field(default_factory=dict)
     eligibility: EligibilityPolicy = field(default_factory=EligibilityPolicy)
+    semantic_rerank: SemanticRerank = field(default_factory=SemanticRerank)
     parameters: EngineParameters = field(default_factory=EngineParameters)
     metadata: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
 
@@ -223,6 +245,8 @@ class CatalogBundle:
             raise ValueError(
                 "eligibility sanity_floor cannot exceed the candidate count"
             )
+        if self.semantic_rerank.model != self.embedding_provenance.get("model"):
+            raise ValueError("semantic rerank model must match embedding model")
         confidence_entropy_limit = (
             self.stop_rule.entropy_floor_multiple * self.entropy_floor
         )
@@ -238,6 +262,7 @@ class CatalogBundle:
         stop = StopRule(**value["stop_rule"])  # type: ignore[arg-type]
         params = EngineParameters(**value.get("parameters", {}))  # type: ignore[arg-type]
         eligibility = EligibilityPolicy(**value.get("eligibility", {}))  # type: ignore[arg-type]
+        semantic = SemanticRerank(**value.get("semantic_rerank", {}))  # type: ignore[arg-type]
         return cls(
             probe_ids=tuple(value["probe_ids"]),  # type: ignore[arg-type]
             candidate_ids=tuple(value["candidate_ids"]),  # type: ignore[arg-type]
@@ -259,6 +284,7 @@ class CatalogBundle:
             ab_eig_provenance=value.get("ab_eig_provenance", {}),  # type: ignore[arg-type]
             embedding_provenance=value.get("embedding_provenance", {}),  # type: ignore[arg-type]
             eligibility=eligibility,
+            semantic_rerank=semantic,
             parameters=params,
             metadata=value.get("metadata", {}),  # type: ignore[arg-type]
         )

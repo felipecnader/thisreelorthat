@@ -24,7 +24,7 @@ The published implementation includes:
 The current private deployment additionally has features that are **described in this document but not implemented in the public reference core**:
 
 - semantic mood filtering and mood-prior routing;
-- semantic and optional terminal reranking;
+- optional terminal LLM reranking;
 - coarse-to-fine pair selection;
 - refused-region filtering;
 - cross-session reuse and vivacity policy inside the variety band;
@@ -64,7 +64,8 @@ set (median 6) among those tied choices. The threshold and calibration
 provenance travel in every bundle.
 
 Bundles now carry `candidate_embeddings` as inert data for the future semantic
-reranker. Production artifacts use `text-embedding-3-large` with this exact
+reranker. The semantic reranker is now part of the public core. Production
+artifacts use `text-embedding-3-large` with this exact
 template (reviews are all available excerpts joined by two newlines, or
 `[none]`):
 
@@ -80,6 +81,15 @@ and the planned reranker builds its semantic reference from those choices.
 Probe embeddings must have the same dimension as candidate embeddings. The
 demo vectors are synthetic and identified as such in
 [`data/demo/README.md`](data/demo/README.md).
+
+The production semantic configuration is `endorsed_minus_none` over a fixed
+posterior window of 60. The reference is the mean of endorsed probe embeddings
+minus the mean of both probes from every `neither` answer, normalized to unit
+length. Semantic similarity may reorder only those 60 candidates; nothing from
+the posterior tail can enter the window. The fixed window was calibrated using
+`text-embedding-3-small` and was not re-swept after promotion to `large`; that
+known evidence gap is carried in bundle provenance. The demo's synthetic
+vectors test mechanics only and make no ranking-quality claim.
 
 ## Run the demo
 

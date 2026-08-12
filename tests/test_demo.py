@@ -14,6 +14,7 @@ def test_demo_has_real_axis_shape_and_disjoint_catalogs() -> None:
     assert bundle.probe_embeddings.shape == (12, 8)
     assert bundle.embedding_provenance["model"] == "synthetic-deterministic-v1"
     # These synthetic vectors prove bundle mechanics only, not rerank quality.
+    assert bundle.semantic_rerank.window == 6
     assert set(bundle.probe_ids).isdisjoint(bundle.candidate_ids)
 
 

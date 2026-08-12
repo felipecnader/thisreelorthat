@@ -1124,3 +1124,9 @@ differences did not justify the loss of choice. The 50% floor was selected to
 maximize the candidate set among statistically indistinguishable sweep arms,
 not because it won a performance metric. New free parameters require a sweep
 or calibration before production.
+
+The equivalence gate has now rejected two incorrect extraction specifications,
+not implementation bugs: `hash(session, round)` instead of production's
+per-pair hash, and `A/B gain / total gain` instead of 50% of the best competing
+conditioned A/B gain. These are positive gate outcomes: observed behavior wins
+over a plausible but incorrect written reconstruction.
