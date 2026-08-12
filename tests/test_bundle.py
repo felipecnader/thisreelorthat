@@ -80,3 +80,12 @@ def test_axis_names_and_candidate_attributes_are_structurally_validated(bundle) 
     bad["c0"] = {"genres": None, "popularity": 0, "runtime_minutes": None}
     with pytest.raises(ValueError, match="null, not zero"):
         replace(bundle, candidate_attributes=bad)
+
+
+def test_selection_history_parameters_are_validated() -> None:
+    from engine import SelectionHistoryPolicy
+
+    with pytest.raises(ValueError, match="strictly descend"):
+        SelectionHistoryPolicy(refused_rms_thresholds=(.6, .75))
+    with pytest.raises(ValueError, match="lookback"):
+        SelectionHistoryPolicy(repeated_axis_lookback=0)

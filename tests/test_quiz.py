@@ -277,3 +277,26 @@ def test_phase_stays_coarse_below_both_mass_gates(bundle) -> None:
     state.posterior = np.full(8, 1 / 8)
     engine._apply_phase_rule(state)
     assert state.phase == "coarse"
+
+
+def test_neither_records_refused_midpoint_and_dominant_axis(bundle) -> None:
+    engine = QuizEngine(bundle)
+    state = engine.start("history")
+    left, right, _ = engine.next_pair(state)
+    left_index = bundle.probe_ids.index(left)
+    right_index = bundle.probe_ids.index(right)
+    engine.answer(state, (left, right), Answer.NEITHER)
+    np.testing.assert_allclose(
+        state.refused_midpoints[0],
+        (bundle.probe_vectors[left_index] + bundle.probe_vectors[right_index]) / 2,
+    )
+    assert state.recent_dominant_axes[-1] == int(np.argmax(np.abs(
+        bundle.probe_vectors[left_index] - bundle.probe_vectors[right_index]
+    )))
+
+
+def test_repeated_axis_filter_relaxes_when_no_alternative(bundle) -> None:
+    engine = QuizEngine(bundle)
+    state = engine.start("relax")
+    state.recent_dominant_axes = list(range(bundle.candidate_vectors.shape[1]))
+    assert engine.next_pair(state)

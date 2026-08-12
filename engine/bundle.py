@@ -112,6 +112,28 @@ class PhasePolicy:
 
 
 @dataclass(frozen=True)
+class SelectionHistoryPolicy:
+    refused_rms_thresholds: tuple[float, ...] = (0.75, 0.60, 0.45, 0.30)
+    repeated_axis_lookback: int = 2
+
+    def __post_init__(self) -> None:
+        if not self.refused_rms_thresholds:
+            raise ValueError("refused RMS thresholds must not be empty")
+        if any(value <= 0 for value in self.refused_rms_thresholds):
+            raise ValueError("refused RMS thresholds must be positive")
+        if any(
+            left <= right
+            for left, right in zip(
+                self.refused_rms_thresholds,
+                self.refused_rms_thresholds[1:],
+            )
+        ):
+            raise ValueError("refused RMS thresholds must strictly descend")
+        if self.repeated_axis_lookback < 1:
+            raise ValueError("repeated axis lookback must be positive")
+
+
+@dataclass(frozen=True)
 class CatalogBundle:
     probe_ids: tuple[str, ...]
     candidate_ids: tuple[str, ...]
@@ -135,6 +157,7 @@ class CatalogBundle:
     eligibility: EligibilityPolicy = field(default_factory=EligibilityPolicy)
     semantic_rerank: SemanticRerank = field(default_factory=SemanticRerank)
     phase: PhasePolicy = field(default_factory=PhasePolicy)
+    selection_history: SelectionHistoryPolicy = field(default_factory=SelectionHistoryPolicy)
     parameters: EngineParameters = field(default_factory=EngineParameters)
     metadata: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
 
@@ -301,6 +324,7 @@ class CatalogBundle:
         eligibility = EligibilityPolicy(**value.get("eligibility", {}))  # type: ignore[arg-type]
         semantic = SemanticRerank(**value.get("semantic_rerank", {}))  # type: ignore[arg-type]
         phase = PhasePolicy(**value.get("phase", {}))  # type: ignore[arg-type]
+        history = SelectionHistoryPolicy(**value.get("selection_history", {}))  # type: ignore[arg-type]
         return cls(
             probe_ids=tuple(value["probe_ids"]),  # type: ignore[arg-type]
             candidate_ids=tuple(value["candidate_ids"]),  # type: ignore[arg-type]
@@ -326,6 +350,7 @@ class CatalogBundle:
             eligibility=eligibility,
             semantic_rerank=semantic,
             phase=phase,
+            selection_history=history,
             parameters=params,
             metadata=value.get("metadata", {}),  # type: ignore[arg-type]
         )

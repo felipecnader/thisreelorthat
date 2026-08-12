@@ -19,6 +19,7 @@ The published implementation includes:
 - seeded near-optimal pair selection without probe reuse;
 - conditioned A/B information-gain floor before the variety band;
 - mass-gated coarse-to-fine question phases;
+- active refused-region and repeated-dominant-axis history filters;
 - catalog-specific confidence/ceiling stopping;
 - frozen single-pick delivery with a skip cursor through the FastAPI adapter;
 - injected session storage via the `SessionStore` protocol;
@@ -28,7 +29,6 @@ The current private deployment additionally has features that are **described in
 
 - semantic mood filtering and mood-prior routing;
 - optional terminal LLM reranking;
-- refused-region filtering;
 - cross-session reuse and vivacity policy inside the variety band;
 - build-time personal probe blocklists;
 - semantic delivery explanation and transport-specific “another one” UI.
@@ -107,6 +107,14 @@ axis. The two-consistent-A/B gate remains a delivery-confidence rule; using it
 for phase transition stranded the earlier K=80 runtime in 82 coarse rounds and
 zero fine rounds. The asymmetric choice is intentional: one premature fine
 question is cheaper than an unsupported delivery.
+
+Selection history is active, not merely diagnostic. Every `neither` stores the
+pair midpoint; later pair midpoints must remain at least RMS 0.75 away, relaxing
+through 0.60, 0.45 and 0.30 only when the stricter threshold would strand the
+pool. The dominant axes of the last two rounds are also excluded, with fail-open
+when no alternative exists. This prevents a refusal of a shared region from
+immediately returning to it while preserving an escape hatch for sparse
+catalogs.
 
 ## Run the demo
 

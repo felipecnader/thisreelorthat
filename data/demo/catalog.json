@@ -114,6 +114,10 @@
     "fine_min_high_axes": 1,
     "high_axis_threshold": 0.8
   },
+  "selection_history": {
+    "refused_rms_thresholds": [0.75, 0.60, 0.45, 0.30],
+    "repeated_axis_lookback": 2
+  },
   "probe_vectors": [
     [
       -0.25,

@@ -52,6 +52,8 @@ class QuizState:
     rejected_probes: list[int] = field(default_factory=list)
     phase: str = "coarse"
     localized_clusters: tuple[int, ...] = ()
+    refused_midpoints: list[np.ndarray] = field(default_factory=list)
+    recent_dominant_axes: list[int] = field(default_factory=list)
 
 
 class QuizEngine:
@@ -217,6 +219,30 @@ class QuizEngine:
             )
         if not np.any(admissible):
             admissible = np.ones(len(pair_pool), dtype=bool)
+        if state.refused_midpoints:
+            midpoints = (
+                self.bundle.probe_vectors[pair_pool[:, 0]]
+                + self.bundle.probe_vectors[pair_pool[:, 1]]
+            ) / 2
+            refused = np.asarray(state.refused_midpoints)
+            distances = np.min(np.sqrt(np.mean(
+                (midpoints[:, None, :] - refused[None, :, :]) ** 2,
+                axis=2,
+            )), axis=1)
+            before = admissible.copy()
+            for threshold in self.bundle.selection_history.refused_rms_thresholds:
+                candidate = before & (distances >= threshold)
+                if np.any(candidate):
+                    admissible = candidate
+                    break
+        recent = state.recent_dominant_axes[
+            -self.bundle.selection_history.repeated_axis_lookback:
+        ]
+        if recent:
+            dominant = np.argmax(contrast, axis=1)
+            candidate = admissible & ~np.isin(dominant, recent)
+            if np.any(candidate):
+                admissible = candidate
         gains[~admissible] = -np.inf
         gains_ab[~admissible] = -np.inf
         if state.used_probes:
@@ -287,6 +313,12 @@ class QuizEngine:
             state.endorsed_probes.append(right)
         elif answer is Answer.NEITHER:
             state.rejected_probes.extend((left, right))
+            state.refused_midpoints.append(
+                (self.bundle.probe_vectors[left] + self.bundle.probe_vectors[right]) / 2
+            )
+        state.recent_dominant_axes.append(int(np.argmax(np.abs(
+            self.bundle.probe_vectors[left] - self.bundle.probe_vectors[right]
+        ))))
         state.pending_pair = None
         state.pending_information_gain = None
         self._apply_stop_rule(state)

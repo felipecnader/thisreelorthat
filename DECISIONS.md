@@ -1130,3 +1130,19 @@ not implementation bugs: `hash(session, round)` instead of production's
 per-pair hash, and `A/B gain / total gain` instead of 50% of the best competing
 conditioned A/B gain. These are positive gate outcomes: observed behavior wins
 over a plausible but incorrect written reconstruction.
+
+## 2026-08-12 — History filters are active with graded fail-open
+
+`neither` stores the shared pair midpoint. Later questions exclude nearby
+midpoints at RMS 0.75, relaxing through 0.60, 0.45 and 0.30 only to avoid
+stranding. The dominant axes from the previous two rounds are excluded with
+the same fail-open principle. They are active selection constraints, not
+counterfactual audit fields.
+
+Across the 591 frozen rounds, 161 answers were `neither`; the refused-region
+filter had history in 407 rounds and the repeated-axis filter in 541. Replaying
+the exact frozen states with and without these two history inputs changed the
+median admissible set from 847 to 228 pairs (minimum remained 1; 513 rounds
+were reduced and 74 unchanged). This is a substantial narrowing but not a
+collapse like the old 95% A/B floor, and the relaxation ladder remains the
+preferred response to sparse states rather than disabling the filters.
