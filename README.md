@@ -13,6 +13,8 @@ The published implementation includes:
 - validated, catalog-specific bundles with separate probes and candidates;
 - candidate embeddings aligned row-for-row with candidate IDs, with model and
   exact input-template provenance carried in the bundle;
+- ordered axis names and explicit per-candidate genre, popularity and runtime
+  attributes for pure routing/filter consumers;
 - four-answer likelihood (`A`, `B`, `either`, `neither`), tempered posterior updates and cluster-entropy information gain;
 - seeded near-optimal pair selection without probe reuse;
 - conditioned A/B information-gain floor before the variety band;
@@ -90,6 +92,12 @@ the posterior tail can enter the window. The fixed window was calibrated using
 `text-embedding-3-small` and was not re-swept after promotion to `large`; that
 known evidence gap is carried in bundle provenance. The demo's synthetic
 vectors test mechanics only and make no ranking-quality claim.
+
+Bundles name every vector column through unique ordered `axis_names` and carry
+exactly one `candidate_attributes` record per candidate. The supported
+attributes are TMDB genres, popularity and runtime; missing values are explicit
+`null`, never zero. Budget is intentionally absent because its 71.6% coverage
+would turn missing data into an exclusion criterion.
 
 ## Run the demo
 

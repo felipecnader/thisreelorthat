@@ -98,6 +98,8 @@ class CatalogBundle:
     candidate_ids: tuple[str, ...]
     probe_vectors: FloatArray
     candidate_vectors: FloatArray
+    axis_names: tuple[str, ...]
+    candidate_attributes: Mapping[str, Mapping[str, object]]
     probe_embeddings: FloatArray
     candidate_embeddings: FloatArray
     cluster_labels: IntArray
@@ -138,6 +140,21 @@ class CatalogBundle:
             raise ValueError("candidate_ids must be unique")
         if set(self.probe_ids) & set(self.candidate_ids):
             raise ValueError("probes and candidates must be disjoint")
+        if len(self.axis_names) != self.candidate_vectors.shape[1]:
+            raise ValueError("axis_names must match candidate vector columns")
+        if len(set(self.axis_names)) != len(self.axis_names):
+            raise ValueError("axis_names must be unique")
+        if any(not name.strip() for name in self.axis_names):
+            raise ValueError("axis_names must be nonempty")
+        if set(self.candidate_attributes) != set(self.candidate_ids):
+            raise ValueError("candidate_attributes requires exactly one entry per candidate")
+        for candidate_id, attributes in self.candidate_attributes.items():
+            if set(attributes) != {"genres", "popularity", "runtime_minutes"}:
+                raise ValueError(
+                    f"candidate attributes must explicitly contain genres, popularity and runtime_minutes for {candidate_id}"
+                )
+            if any(attributes[key] == 0 for key in attributes):
+                raise ValueError("missing candidate attributes must be null, not zero")
         unknown_metadata = set(self.metadata) - set(self.candidate_ids)
         if unknown_metadata:
             raise ValueError("metadata contains an unknown candidate")
@@ -268,6 +285,8 @@ class CatalogBundle:
             candidate_ids=tuple(value["candidate_ids"]),  # type: ignore[arg-type]
             probe_vectors=np.asarray(value["probe_vectors"], dtype=float),
             candidate_vectors=np.asarray(value["candidate_vectors"], dtype=float),
+            axis_names=tuple(value["axis_names"]),  # type: ignore[arg-type]
+            candidate_attributes=value["candidate_attributes"],  # type: ignore[arg-type]
             candidate_embeddings=np.asarray(
                 value["candidate_embeddings"], dtype=float
             ),

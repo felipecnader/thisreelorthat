@@ -22,6 +22,15 @@ def bundle() -> CatalogBundle:
         candidate_ids=tuple(f"c{i}" for i in range(len(candidate_vectors))),
         probe_vectors=probe_vectors,
         candidate_vectors=candidate_vectors,
+        axis_names=("tone", "pace"),
+        candidate_attributes={
+            f"c{i}": {
+                "genres": None,
+                "popularity": None,
+                "runtime_minutes": None,
+            }
+            for i in range(len(candidate_vectors))
+        },
         candidate_embeddings=np.asarray([
             [1.0, 0.0, 0.0], [0.9, 0.1, 0.0],
             [0.0, 1.0, 0.0], [0.1, 0.9, 0.0],

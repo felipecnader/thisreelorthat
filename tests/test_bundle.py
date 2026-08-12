@@ -63,3 +63,20 @@ def test_ab_eig_provenance_is_required(bundle, key) -> None:
     provenance[key] = ""
     with pytest.raises(ValueError, match=f"nonempty {key}"):
         replace(bundle, ab_eig_provenance=provenance)
+
+
+def test_axis_names_and_candidate_attributes_are_structurally_validated(bundle) -> None:
+    with pytest.raises(ValueError, match="axis_names must match"):
+        replace(bundle, axis_names=("only-one",))
+    with pytest.raises(ValueError, match="axis_names must be unique"):
+        replace(bundle, axis_names=("same", "same"))
+    with pytest.raises(ValueError, match="exactly one entry"):
+        replace(bundle, candidate_attributes={})
+    bad = dict(bundle.candidate_attributes)
+    bad["c0"] = {"genres": None, "popularity": None}
+    with pytest.raises(ValueError, match="explicitly contain"):
+        replace(bundle, candidate_attributes=bad)
+    bad = dict(bundle.candidate_attributes)
+    bad["c0"] = {"genres": None, "popularity": 0, "runtime_minutes": None}
+    with pytest.raises(ValueError, match="null, not zero"):
+        replace(bundle, candidate_attributes=bad)

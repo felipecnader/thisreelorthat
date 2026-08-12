@@ -15,6 +15,26 @@
     "english_international",
     "comic_serious"
   ],
+  "axis_names": [
+    "heavy_light", "intimate_epic", "literal_impossibility",
+    "subjective_unreality", "slow_propulsive", "cerebral_emotional",
+    "gray_cathartic", "classic_contemporary", "animation_live_action",
+    "demanding_casual", "english_international", "comic_serious"
+  ],
+  "candidate_attributes": {
+    "aftersun": {"genres": null, "popularity": null, "runtime_minutes": null},
+    "anatomy-of-a-fall": {"genres": null, "popularity": null, "runtime_minutes": null},
+    "apocalypse-now": {"genres": null, "popularity": null, "runtime_minutes": null},
+    "big-fish": {"genres": null, "popularity": null, "runtime_minutes": null},
+    "booksmart": {"genres": null, "popularity": null, "runtime_minutes": null},
+    "bottoms": {"genres": null, "popularity": null, "runtime_minutes": null},
+    "portrait-of-a-lady-on-fire": {"genres": null, "popularity": null, "runtime_minutes": null},
+    "past-lives": {"genres": null, "popularity": null, "runtime_minutes": null},
+    "decision-to-leave": {"genres": null, "popularity": null, "runtime_minutes": null},
+    "the-banshees-of-inisherin": {"genres": null, "popularity": null, "runtime_minutes": null},
+    "the-handmaiden": {"genres": null, "popularity": null, "runtime_minutes": null},
+    "drive-my-car": {"genres": null, "popularity": null, "runtime_minutes": null}
+  },
   "probe_ids": [
     "2001-a-space-odyssey",
     "before-sunrise",
