@@ -87,6 +87,8 @@ class CatalogBundle:
     stop_rule: StopRule
     near_optimal_epsilon: float = 0.10
     opening_min_candidates: int = 10
+    ab_eig_relative_floor: float = 0.50
+    ab_eig_provenance: Mapping[str, object] = field(default_factory=dict)
     embedding_provenance: Mapping[str, object] = field(default_factory=dict)
     eligibility: EligibilityPolicy = field(default_factory=EligibilityPolicy)
     parameters: EngineParameters = field(default_factory=EngineParameters)
@@ -198,6 +200,14 @@ class CatalogBundle:
             raise ValueError("opening_min_candidates must be positive")
         if self.opening_min_candidates > len(self.pair_pool):
             raise ValueError("opening_min_candidates cannot exceed pair_pool size")
+        if (
+            not math.isfinite(self.ab_eig_relative_floor)
+            or not 0 < self.ab_eig_relative_floor < 1
+        ):
+            raise ValueError("ab_eig_relative_floor must be in (0, 1)")
+        for key in ("decision", "calibration"):
+            if not str(self.ab_eig_provenance.get(key, "")).strip():
+                raise ValueError(f"ab_eig_provenance requires a nonempty {key}")
         if self.prior.shape != (len(self.candidate_ids),):
             raise ValueError("prior shape does not match candidates")
         if not np.all(np.isfinite(self.prior)) or np.any(self.prior <= 0):
@@ -245,6 +255,8 @@ class CatalogBundle:
             stop_rule=stop,
             near_optimal_epsilon=float(value.get("near_optimal_epsilon", 0.10)),
             opening_min_candidates=int(value.get("opening_min_candidates", 10)),
+            ab_eig_relative_floor=float(value.get("ab_eig_relative_floor", 0.50)),
+            ab_eig_provenance=value.get("ab_eig_provenance", {}),  # type: ignore[arg-type]
             embedding_provenance=value.get("embedding_provenance", {}),  # type: ignore[arg-type]
             eligibility=eligibility,
             parameters=params,

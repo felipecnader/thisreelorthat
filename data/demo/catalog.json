@@ -545,6 +545,11 @@
   "entropy_floor": 2.5,
   "near_optimal_epsilon": 0.1,
   "opening_min_candidates": 6,
+  "ab_eig_relative_floor": 0.5,
+  "ab_eig_provenance": {
+    "decision": "Production value; maximize candidate set among statistically tied sweep arms.",
+    "calibration": "50-target sweep across 0.50, 0.70, 0.85 and 0.95; 0.95 had median 2 candidates versus 6 at 0.50."
+  },
   "eligibility": {
     "sanity_floor": 3,
     "direct_pick_below": 2

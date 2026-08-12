@@ -89,3 +89,33 @@ def expected_information_gain(cluster_posterior: FloatArray, pair_likelihoods: F
     )
     expected_h = np.sum(outcome * conditional_h, axis=1)
     return entropy(cluster_posterior) - expected_h
+
+
+def conditioned_information_gain(
+    cluster_posterior: FloatArray,
+    pair_likelihoods: FloatArray,
+    channels: tuple[int, ...] = (0, 1),
+) -> FloatArray:
+    """Expected entropy reduction conditioned on selected answer channels.
+
+    The default channels are A and B. Their outcome probabilities are
+    renormalized inside the conditioned event, so refusal cannot make a pair
+    look useful through this acquisition score.
+    """
+    if not channels or any(channel < 0 or channel >= 4 for channel in channels):
+        raise ValueError("conditioned channels must be nonempty likelihood indices")
+    selected = pair_likelihoods[:, :, list(channels)]
+    outcome = np.einsum("k,pka->pa", cluster_posterior, selected)
+    channel_mass = outcome.sum(axis=1)
+    conditional = (
+        cluster_posterior[None, :, None]
+        * selected
+        / np.maximum(outcome[:, None, :], 1e-12)
+    )
+    conditional_h = -np.sum(
+        conditional * np.log(np.maximum(conditional, 1e-300)), axis=1
+    )
+    conditioned_outcome = outcome / np.maximum(channel_mass[:, None], 1e-12)
+    return entropy(cluster_posterior) - np.sum(
+        conditioned_outcome * conditional_h, axis=1
+    )

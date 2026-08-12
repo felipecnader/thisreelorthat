@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from engine.math import likelihood, normalize, pair_features, update
+from engine.math import (
+    conditioned_information_gain,
+    likelihood,
+    normalize,
+    pair_features,
+    update,
+)
 
 
 def test_normalize_is_positive_and_sums_to_one() -> None:
@@ -37,3 +43,18 @@ def test_tempered_update_stays_strictly_positive() -> None:
     result = update(posterior, np.asarray([0.01, 0.5, 0.99]), beta=0.70)
     assert np.all(result > 0)
     assert np.isclose(result.sum(), 1.0)
+
+
+def test_conditioned_information_gain_renormalizes_ab_channels() -> None:
+    posterior = np.asarray([0.5, 0.5])
+    likelihoods = np.asarray([
+        [
+            [[0.45, 0.05, 0.49, 0.01], [0.05, 0.45, 0.49, 0.01]],
+            [[0.10, 0.10, 0.10, 0.70], [0.10, 0.10, 0.70, 0.10]],
+        ]
+    ]).reshape(2, 2, 4)
+
+    gains = conditioned_information_gain(posterior, likelihoods)
+
+    assert gains[0] > gains[1]
+    assert np.isclose(gains[1], 0.0)

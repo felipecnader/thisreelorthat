@@ -15,6 +15,7 @@ The published implementation includes:
   exact input-template provenance carried in the bundle;
 - four-answer likelihood (`A`, `B`, `either`, `neither`), tempered posterior updates and cluster-entropy information gain;
 - seeded near-optimal pair selection without probe reuse;
+- conditioned A/B information-gain floor before the variety band;
 - catalog-specific confidence/ceiling stopping;
 - frozen single-pick delivery with a skip cursor through the FastAPI adapter;
 - injected session storage via the `SessionStore` protocol;
@@ -25,7 +26,6 @@ The current private deployment additionally has features that are **described in
 - semantic mood filtering and mood-prior routing;
 - semantic and optional terminal reranking;
 - coarse-to-fine pair selection;
-- the conditioned A/B information-gain floor;
 - refused-region filtering;
 - cross-session reuse and vivacity policy inside the variety band;
 - build-time personal probe blocklists;
@@ -51,6 +51,17 @@ rejection or acceptance. Only `/picks/accept` records acceptance. From the sixth
 shown item onward `lowConfidence` is true without blocking further traversal.
 Post-film reminders, posters, verified availability and vibe feedback remain
 outside the domain core.
+
+Pair admissibility also has a conditioned A/B information-gain floor. This is
+not `A/B gain / total gain`: production computes expected information gain
+conditioned on the A and B channels, then keeps pairs at or above 50% of the
+best conditioned gain among the already admissible set. Only afterward does
+the total-gain near-optimal variety band run. The original 95% convenience
+value collapsed the median candidate set from 347 pairs after reuse removal to
+2. In the 50-target sweep, `none` rates from 50% through 95% were statistically
+indistinguishable; 50% was selected because it retained the largest candidate
+set (median 6) among those tied choices. The threshold and calibration
+provenance travel in every bundle.
 
 Bundles now carry `candidate_embeddings` as inert data for the future semantic
 reranker. Production artifacts use `text-embedding-3-large` with this exact

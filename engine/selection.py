@@ -54,6 +54,8 @@ def near_optimal_index(
     selection_seed: str,
     round_number: int,
     weights: FloatArray | None = None,
+    conditioned_gains: FloatArray | None = None,
+    conditioned_relative_floor: float | None = None,
 ) -> int:
     """Choose by a deterministic exponential race inside the EIG band.
 
@@ -65,7 +67,31 @@ def near_optimal_index(
     pairs = np.asarray(pairs, dtype=int)
     if gains.shape != (len(pairs),):
         raise ValueError("one gain is required per pair")
-    allowed = np.flatnonzero(np.isfinite(gains))
+    allowed_mask = np.isfinite(gains)
+    if conditioned_gains is not None:
+        conditioned_gains = np.asarray(conditioned_gains, dtype=float)
+        if conditioned_gains.shape != gains.shape:
+            raise ValueError("conditioned gains must match total gains")
+        if (
+            conditioned_relative_floor is None
+            or not 0 < conditioned_relative_floor < 1
+        ):
+            raise ValueError("conditioned_relative_floor must be in (0, 1)")
+        candidates = np.flatnonzero(
+            allowed_mask & np.isfinite(conditioned_gains)
+        )
+        if len(candidates) == 0:
+            raise RuntimeError("no pair has finite conditioned gain")
+        maximum_conditioned = float(np.max(conditioned_gains[candidates]))
+        floor = (
+            conditioned_relative_floor * maximum_conditioned
+            if maximum_conditioned > 0
+            else maximum_conditioned - 1e-12
+        )
+        allowed_mask &= conditioned_gains >= floor
+    elif conditioned_relative_floor is not None:
+        raise ValueError("conditioned gains are required for a relative floor")
+    allowed = np.flatnonzero(allowed_mask)
     if len(allowed) == 0:
         raise RuntimeError("pair pool exhausted")
     maximum = float(np.max(gains[allowed]))

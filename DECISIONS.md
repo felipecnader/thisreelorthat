@@ -1108,3 +1108,19 @@ forced by a one-pair band. Thus roughly 72% of all rounds deliberately chose a
 near-optimal pair other than the argmax: this is the quantified information
 cost paid for pair variety, not selector error. The normalized winner positions
 match the weighted-race expectation; there is no fixed-position seed bias.
+
+## 2026-08-12 — A/B information floor is 50% of best conditioned gain
+
+The channel-robustness gate measures expected information gain conditioned on
+the choice channels A/B. It does not divide that quantity by total information
+gain. Among pairs that survive the structural filters, a pair must retain at
+least 50% of the largest conditioned A/B gain; the near-optimal total-EIG band
+runs afterward.
+
+The first 95% value was chosen for convenience and collapsed the median set
+after used-probe removal from 347 to 2 pairs. On the same 50 targets, `none`
+was 65.40% at 50%, 64.94% at 70%, 63.58% at 85%, and 64.20% at 95%; the
+differences did not justify the loss of choice. The 50% floor was selected to
+maximize the candidate set among statistically indistinguishable sweep arms,
+not because it won a performance metric. New free parameters require a sweep
+or calibration before production.

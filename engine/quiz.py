@@ -10,6 +10,7 @@ import numpy as np
 from .bundle import CatalogBundle
 from .math import (
     cluster_mass,
+    conditioned_information_gain,
     entropy,
     expected_information_gain,
     likelihood,
@@ -164,6 +165,9 @@ class QuizEngine:
             len(self.bundle.cluster_centers),
         )
         gains = expected_information_gain(cluster_posterior, self._cluster_likelihoods)
+        gains_ab = conditioned_information_gain(
+            cluster_posterior, self._cluster_likelihoods
+        )
         if state.used_probes:
             unavailable = np.asarray(
                 [
@@ -172,6 +176,7 @@ class QuizEngine:
                 ]
             )
             gains[unavailable] = -np.inf
+            gains_ab[unavailable] = -np.inf
         index = near_optimal_index(
             gains,
             self.bundle.pair_pool,
@@ -179,6 +184,8 @@ class QuizEngine:
             opening_min_candidates=self.bundle.opening_min_candidates,
             selection_seed=state.selection_seed,
             round_number=state.round + 1,
+            conditioned_gains=gains_ab,
+            conditioned_relative_floor=self.bundle.ab_eig_relative_floor,
         )
         left, right = map(int, self.bundle.pair_pool[index])
         state.pending_pair = (

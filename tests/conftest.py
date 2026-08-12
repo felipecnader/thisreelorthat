@@ -41,6 +41,11 @@ def bundle() -> CatalogBundle:
         entropy_floor=2.0,
         near_optimal_epsilon=0.10,
         opening_min_candidates=6,
+        ab_eig_relative_floor=0.50,
+        ab_eig_provenance={
+            "decision": "maximize candidate set among statistically tied sweep arms",
+            "calibration": "production 50-target sweep: 0.50, 0.70, 0.85, 0.95",
+        },
         embedding_provenance={
             "model": "synthetic-test",
             "template": "candidate {id}",

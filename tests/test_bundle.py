@@ -49,3 +49,17 @@ def test_candidate_delivery_metadata_is_validated(bundle) -> None:
         replace(bundle, metadata={"c0": {"runtime_minutes": 0}})
     with pytest.raises(ValueError, match="franchise must be nonempty"):
         replace(bundle, metadata={"c0": {"franchise": " "}})
+
+
+@pytest.mark.parametrize("floor", [0.0, -0.1, 1.0, 1.1, np.nan])
+def test_ab_eig_floor_must_be_strictly_between_zero_and_one(bundle, floor) -> None:
+    with pytest.raises(ValueError, match="ab_eig_relative_floor"):
+        replace(bundle, ab_eig_relative_floor=floor)
+
+
+@pytest.mark.parametrize("key", ["decision", "calibration"])
+def test_ab_eig_provenance_is_required(bundle, key) -> None:
+    provenance = dict(bundle.ab_eig_provenance)
+    provenance[key] = ""
+    with pytest.raises(ValueError, match=f"nonempty {key}"):
+        replace(bundle, ab_eig_provenance=provenance)
