@@ -40,3 +40,12 @@ def test_embedding_provenance_is_required(bundle, key) -> None:
     provenance[key] = ""
     with pytest.raises(ValueError, match=f"nonempty {key}"):
         replace(bundle, embedding_provenance=provenance)
+
+
+def test_candidate_delivery_metadata_is_validated(bundle) -> None:
+    with pytest.raises(ValueError, match="unknown candidate"):
+        replace(bundle, metadata={"missing": {"title": "Missing"}})
+    with pytest.raises(ValueError, match="runtime_minutes"):
+        replace(bundle, metadata={"c0": {"runtime_minutes": 0}})
+    with pytest.raises(ValueError, match="franchise must be nonempty"):
+        replace(bundle, metadata={"c0": {"franchise": " "}})

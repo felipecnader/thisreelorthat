@@ -42,6 +42,10 @@ class QuizState:
     pending_information_gain: float | None = None
     stopped: bool = False
     stop_reason: str | None = None
+    frozen_pick_order: list[dict[str, object]] = field(default_factory=list)
+    pick_cursor: int = 0
+    pick_skips: list[dict[str, object]] = field(default_factory=list)
+    accepted_pick: dict[str, object] | None = None
 
 
 class QuizEngine:
@@ -256,6 +260,69 @@ class QuizEngine:
                 }
             )
         return rows
+
+    def prepare_pick_order(self, state: QuizState) -> list[dict[str, object]]:
+        """Freeze masked posterior order once, deduplicating franchises."""
+        if not state.stopped:
+            raise ValueError("quiz has not stopped")
+        if state.frozen_pick_order:
+            return state.frozen_pick_order
+        ranked = self.ranked_candidates(
+            state, limit=int(state.eligibility_mask.sum())
+        )
+        seen_franchises: set[str] = set()
+        frozen = []
+        for rank_position, row in enumerate(ranked, start=1):
+            candidate_id = str(row["id"])
+            raw_franchise = self.bundle.metadata.get(candidate_id, {}).get(
+                "franchise"
+            )
+            franchise = (
+                str(raw_franchise).strip().casefold()
+                if raw_franchise is not None else None
+            )
+            if franchise is not None and franchise in seen_franchises:
+                continue
+            if franchise is not None:
+                seen_franchises.add(franchise)
+            frozen.append({**row, "rankPosition": rank_position})
+        if not frozen:
+            raise ValueError("no eligible candidate remains for pick")
+        state.frozen_pick_order = frozen
+        return frozen
+
+    def current_pick(self, state: QuizState) -> dict[str, object]:
+        order = self.prepare_pick_order(state)
+        if state.pick_cursor >= len(order):
+            raise ValueError("pick order exhausted")
+        return {
+            **order[state.pick_cursor],
+            "cursorPosition": state.pick_cursor + 1,
+            "lowConfidence": state.pick_cursor >= 5,
+        }
+
+    def skip_pick(self, state: QuizState) -> dict[str, object]:
+        if state.accepted_pick is not None:
+            raise ValueError("a pick has already been accepted")
+        current = self.current_pick(state)
+        if state.pick_cursor + 1 >= len(state.frozen_pick_order):
+            raise ValueError("pick order exhausted")
+        state.pick_skips.append({
+            "candidateId": current["id"],
+            "rankPosition": current["rankPosition"],
+        })
+        state.pick_cursor += 1
+        return self.current_pick(state)
+
+    def accept_pick(self, state: QuizState) -> dict[str, object]:
+        if state.accepted_pick is not None:
+            raise ValueError("a pick has already been accepted")
+        current = self.current_pick(state)
+        state.accepted_pick = {
+            "candidateId": current["id"],
+            "rankPosition": current["rankPosition"],
+        }
+        return state.accepted_pick
 
     def _apply_stop_rule(self, state: QuizState) -> None:
         rule = self.bundle.stop_rule

@@ -55,9 +55,13 @@ def create_app(bundle: CatalogBundle, store: SessionStore | None = None) -> Fast
             "status": "complete" if state.stopped else "active",
             "stopReason": state.stop_reason,
             "metrics": engine.metrics(state),
+            "eligibilityWarning": state.eligibility_warning,
+            "eligibleCandidateCount": int(state.eligibility_mask.sum()),
         }
         if state.stopped:
-            response["candidates"] = engine.ranked_candidates(state)
+            response["pick"] = engine.current_pick(state)
+            response["pickSkips"] = state.pick_skips
+            response["acceptedPick"] = state.accepted_pick
         else:
             left, right, gain = engine.next_pair(state)
             response["pair"] = {"left": left, "right": right, "informationGain": gain}
@@ -99,6 +103,34 @@ def create_app(bundle: CatalogBundle, store: SessionStore | None = None) -> Fast
             state = sessions.get(session_id)
             if state is None:
                 raise HTTPException(status_code=404, detail="session not found")
+            response = present(session_id, state)
+            sessions.put(session_id, state)
+            return response
+
+    @app.post("/sessions/{session_id}/picks/skip")
+    def skip_pick(session_id: str) -> dict[str, object]:
+        with answer_lock:
+            state = sessions.get(session_id)
+            if state is None:
+                raise HTTPException(status_code=404, detail="session not found")
+            try:
+                engine.skip_pick(state)
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            response = present(session_id, state)
+            sessions.put(session_id, state)
+            return response
+
+    @app.post("/sessions/{session_id}/picks/accept")
+    def accept_pick(session_id: str) -> dict[str, object]:
+        with answer_lock:
+            state = sessions.get(session_id)
+            if state is None:
+                raise HTTPException(status_code=404, detail="session not found")
+            try:
+                engine.accept_pick(state)
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
             response = present(session_id, state)
             sessions.put(session_id, state)
             return response

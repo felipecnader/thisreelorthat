@@ -114,6 +114,23 @@ class CatalogBundle:
             raise ValueError("candidate_ids must be unique")
         if set(self.probe_ids) & set(self.candidate_ids):
             raise ValueError("probes and candidates must be disjoint")
+        unknown_metadata = set(self.metadata) - set(self.candidate_ids)
+        if unknown_metadata:
+            raise ValueError("metadata contains an unknown candidate")
+        for candidate_id, item in self.metadata.items():
+            runtime = item.get("runtime_minutes")
+            if runtime is not None and (
+                not isinstance(runtime, int) or isinstance(runtime, bool)
+                or runtime < 1
+            ):
+                raise ValueError(
+                    f"runtime_minutes must be a positive integer for {candidate_id}"
+                )
+            franchise = item.get("franchise")
+            if franchise is not None and not str(franchise).strip():
+                raise ValueError(
+                    f"franchise must be nonempty for {candidate_id}"
+                )
         if self.probe_vectors.ndim != 2 or len(self.probe_vectors) != len(self.probe_ids):
             raise ValueError("probe vector shape does not match probe_ids")
         if self.candidate_vectors.ndim != 2 or len(self.candidate_vectors) != len(self.candidate_ids):

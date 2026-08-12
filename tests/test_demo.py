@@ -38,8 +38,7 @@ def test_demo_runs_from_first_pair_to_ranked_pick() -> None:
 
     assert state["round"] == 6
     assert state["stopReason"] == "ceiling"
-    assert len(state["candidates"]) == 12
-    assert {"id", "title", "year", "posterior"} <= state["candidates"][0].keys()
+    assert {"id", "title", "year", "posterior"} <= state["pick"].keys()
 
 
 def test_demo_confidence_path_is_reachable() -> None:

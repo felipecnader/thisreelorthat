@@ -28,3 +28,6 @@ reachable but demanding for this small pool: some sequences stop by
 the research/private-deployment sections of the root README do not apply here.
 The engine evaluates confidence before the ceiling when both conditions are
 checked on the same answer.
+
+After stopping, the API returns a single pick. Calling the skip endpoint walks
+the already-frozen order; the demo does not recalculate between picks.

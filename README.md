@@ -16,7 +16,7 @@ The published implementation includes:
 - four-answer likelihood (`A`, `B`, `either`, `neither`), tempered posterior updates and cluster-entropy information gain;
 - seeded near-optimal pair selection without probe reuse;
 - catalog-specific confidence/ceiling stopping;
-- ranked candidates through a three-endpoint FastAPI adapter;
+- frozen single-pick delivery with a skip cursor through the FastAPI adapter;
 - injected session storage via the `SessionStore` protocol;
 - a complete 12-axis demo bundle and end-to-end test.
 
@@ -29,7 +29,7 @@ The current private deployment additionally has features that are **described in
 - refused-region filtering;
 - cross-session reuse and vivacity policy inside the variety band;
 - build-time personal probe blocklists;
-- franchise dedupe, frozen single-pick delivery and “another one”.
+- semantic delivery explanation and transport-specific “another one” UI.
 
 Those private-deployment features require further extraction; their description below is a design/history record, not an API guarantee for this repository.
 
@@ -42,6 +42,15 @@ bundle carries a small-set warning floor and a direct-pick threshold (production
 uses 180 and 60); both are validated against the catalog size. A masked support
 recomputes its theoretical entropy floor and within-cluster delta, and an empty
 mask fails clearly.
+
+Completed sessions expose one pick: the masked posterior argmax after explicit
+franchise deduplication. The order is frozen once and a skip advances its cursor
+without recalculation. Each entry in `pickSkips` records the concrete film and
+its original one-based posterior rank; a skip means “keep looking”, not a
+rejection or acceptance. Only `/picks/accept` records acceptance. From the sixth
+shown item onward `lowConfidence` is true without blocking further traversal.
+Post-film reminders, posters, verified availability and vibe feedback remain
+outside the domain core.
 
 Bundles now carry `candidate_embeddings` as inert data for the future semantic
 reranker. Production artifacts use `text-embedding-3-large` with this exact

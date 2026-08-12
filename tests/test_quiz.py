@@ -185,3 +185,52 @@ def test_small_eligible_set_warns_and_can_skip_quiz(bundle) -> None:
     assert state.direct_pick
     assert state.stopped
     assert state.stop_reason == "direct_pick"
+
+
+def test_pick_order_is_frozen_and_skip_logs_original_rank(bundle) -> None:
+    engine = QuizEngine(bundle)
+    state = engine.start()
+    state.stopped = True
+    state.posterior = np.asarray([.30, .25, .20, .10, .06, .04, .03, .02])
+    first = engine.current_pick(state)
+    frozen = list(state.frozen_pick_order)
+
+    state.posterior = state.posterior[::-1].copy()
+    second = engine.skip_pick(state)
+
+    assert state.frozen_pick_order == frozen
+    assert state.pick_skips == [{
+        "candidateId": first["id"],
+        "rankPosition": first["rankPosition"],
+    }]
+    assert second["id"] == frozen[1]["id"]
+
+
+def test_pick_order_deduplicates_franchise_and_flags_sixth(bundle) -> None:
+    metadata = {
+        candidate_id: {**bundle.metadata.get(candidate_id, {})}
+        for candidate_id in bundle.candidate_ids
+    }
+    metadata["c7"]["franchise"] = "Same Series"
+    metadata["c6"]["franchise"] = "same series"
+    engine = QuizEngine(replace(bundle, metadata=metadata))
+    state = engine.start()
+    state.stopped = True
+
+    order = engine.prepare_pick_order(state)
+    assert not ({"c6", "c7"} <= {str(row["id"]) for row in order})
+    for _ in range(5):
+        engine.skip_pick(state)
+    assert engine.current_pick(state)["lowConfidence"]
+
+
+def test_only_explicit_acceptance_counts(bundle) -> None:
+    engine = QuizEngine(bundle)
+    state = engine.start()
+    state.stopped = True
+    engine.current_pick(state)
+    assert state.accepted_pick is None
+
+    accepted = engine.accept_pick(state)
+
+    assert accepted == state.accepted_pick

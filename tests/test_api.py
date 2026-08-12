@@ -79,3 +79,29 @@ def test_stale_or_mismatched_pair_is_409_without_advancing(bundle) -> None:
     )
     assert duplicate.status_code == 409
     assert client.get(f"/sessions/{session_id}").json()["round"] == 1
+
+
+def test_single_pick_skip_and_accept_lifecycle(bundle) -> None:
+    client = TestClient(create_app(bundle))
+    state = client.post("/sessions").json()
+    while state["status"] == "active":
+        pair = state["pair"]
+        state = client.post(
+            f"/sessions/{state['sessionId']}/answers",
+            json={**pair, "answer": "a"},
+        ).json()
+
+    first = state["pick"]
+    skipped = client.post(
+        f"/sessions/{state['sessionId']}/picks/skip"
+    ).json()
+    assert skipped["pick"]["id"] != first["id"]
+    assert skipped["pickSkips"] == [{
+        "candidateId": first["id"],
+        "rankPosition": first["rankPosition"],
+    }]
+
+    accepted = client.post(
+        f"/sessions/{state['sessionId']}/picks/accept"
+    ).json()
+    assert accepted["acceptedPick"]["candidateId"] == skipped["pick"]["id"]
