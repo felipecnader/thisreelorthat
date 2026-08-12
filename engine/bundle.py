@@ -58,6 +58,20 @@ class StopRule:
 
 
 @dataclass(frozen=True)
+class EligibilityPolicy:
+    sanity_floor: int = 180
+    direct_pick_below: int = 60
+
+    def __post_init__(self) -> None:
+        if self.sanity_floor < 1:
+            raise ValueError("eligibility sanity_floor must be positive")
+        if self.direct_pick_below < 1:
+            raise ValueError("direct_pick_below must be positive")
+        if self.direct_pick_below > self.sanity_floor:
+            raise ValueError("direct_pick_below cannot exceed sanity_floor")
+
+
+@dataclass(frozen=True)
 class CatalogBundle:
     probe_ids: tuple[str, ...]
     candidate_ids: tuple[str, ...]
@@ -74,6 +88,7 @@ class CatalogBundle:
     near_optimal_epsilon: float = 0.10
     opening_min_candidates: int = 10
     embedding_provenance: Mapping[str, object] = field(default_factory=dict)
+    eligibility: EligibilityPolicy = field(default_factory=EligibilityPolicy)
     parameters: EngineParameters = field(default_factory=EngineParameters)
     metadata: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
 
@@ -177,6 +192,10 @@ class CatalogBundle:
             raise ValueError("entropy_floor must be positive")
         if self.entropy_floor > len(self.candidate_ids):
             raise ValueError("entropy_floor cannot exceed the candidate count")
+        if self.eligibility.sanity_floor > len(self.candidate_ids):
+            raise ValueError(
+                "eligibility sanity_floor cannot exceed the candidate count"
+            )
         confidence_entropy_limit = (
             self.stop_rule.entropy_floor_multiple * self.entropy_floor
         )
@@ -191,6 +210,7 @@ class CatalogBundle:
         """Build a bundle from a JSON-like mapping."""
         stop = StopRule(**value["stop_rule"])  # type: ignore[arg-type]
         params = EngineParameters(**value.get("parameters", {}))  # type: ignore[arg-type]
+        eligibility = EligibilityPolicy(**value.get("eligibility", {}))  # type: ignore[arg-type]
         return cls(
             probe_ids=tuple(value["probe_ids"]),  # type: ignore[arg-type]
             candidate_ids=tuple(value["candidate_ids"]),  # type: ignore[arg-type]
@@ -209,6 +229,7 @@ class CatalogBundle:
             near_optimal_epsilon=float(value.get("near_optimal_epsilon", 0.10)),
             opening_min_candidates=int(value.get("opening_min_candidates", 10)),
             embedding_provenance=value.get("embedding_provenance", {}),  # type: ignore[arg-type]
+            eligibility=eligibility,
             parameters=params,
             metadata=value.get("metadata", {}),  # type: ignore[arg-type]
         )

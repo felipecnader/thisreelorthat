@@ -64,9 +64,14 @@ def create_app(bundle: CatalogBundle, store: SessionStore | None = None) -> Fast
         return response
 
     @app.post("/sessions", status_code=201)
-    def start_session() -> dict[str, object]:
+    def start_session(duration_ceiling: int | None = None) -> dict[str, object]:
         session_id = uuid4().hex
-        state = engine.start(session_id)
+        try:
+            state = engine.start(
+                session_id, duration_ceiling=duration_ceiling
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         response = present(session_id, state)
         sessions.put(session_id, state)
         return response

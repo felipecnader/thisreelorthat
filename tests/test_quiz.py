@@ -95,3 +95,93 @@ def test_ranked_candidates_include_public_metadata(bundle) -> None:
     rows = engine.ranked_candidates(engine.start(), limit=1)
     assert rows[0]["id"] == "c7"  # stable argsort tie behavior
     assert "posterior" in rows[0]
+
+
+def test_duration_is_inclusive_and_missing_metadata_fails_open(bundle) -> None:
+    metadata = {
+        candidate_id: {**bundle.metadata.get(candidate_id, {})}
+        for candidate_id in bundle.candidate_ids
+    }
+    metadata["c0"]["runtime_minutes"] = 90
+    metadata["c1"]["runtime_minutes"] = 91
+    metadata["c2"]["availability"] = []  # availability is informative only
+    engine = QuizEngine(replace(bundle, metadata=metadata))
+
+    state = engine.start(duration_ceiling=90)
+
+    assert state.eligibility_mask[0]
+    assert not state.eligibility_mask[1]
+    assert state.eligibility_mask[2]  # missing runtime and no availability
+    assert np.isclose(state.posterior[~state.eligibility_mask].sum(), 0.0)
+
+
+def test_mask_is_applied_before_ranking_on_full_catalog(bundle) -> None:
+    engine = QuizEngine(bundle)
+    state = engine.start()
+    state.posterior = np.asarray([.30, .25, .20, .10, .06, .04, .03, .02])
+    state.eligibility_mask = np.asarray(
+        [False, False, False, False, False, True, True, True]
+    )
+
+    rows = engine.ranked_candidates(state, limit=2)
+
+    # Ranking first would take c0/c1 and filtering afterward would return none.
+    assert [row["id"] for row in rows] == ["c5", "c6"]
+
+
+def test_mask_recomputes_entropy_floor_and_delta(bundle) -> None:
+    metadata = {
+        candidate_id: {
+            **bundle.metadata.get(candidate_id, {}),
+            "runtime_minutes": 200 if index >= 4 else 100,
+        }
+        for index, candidate_id in enumerate(bundle.candidate_ids)
+    }
+    state = QuizEngine(replace(bundle, metadata=metadata)).start(
+        duration_ceiling=150
+    )
+
+    assert state.entropy_floor == 2.0  # two surviving clusters of size two
+    assert state.delta90 > 0
+
+
+def test_empty_eligibility_mask_has_clear_error(bundle) -> None:
+    metadata = {
+        candidate_id: {"runtime_minutes": 200}
+        for candidate_id in bundle.candidate_ids
+    }
+    engine = QuizEngine(replace(bundle, metadata=metadata))
+
+    with pytest.raises(ValueError, match="removed every candidate"):
+        engine.start(duration_ceiling=90)
+
+
+def test_eligibility_build_invariants(bundle) -> None:
+    from engine import EligibilityPolicy
+
+    with pytest.raises(ValueError, match="cannot exceed the candidate count"):
+        replace(
+            bundle,
+            eligibility=EligibilityPolicy(
+                sanity_floor=len(bundle.candidate_ids) + 1,
+                direct_pick_below=2,
+            ),
+        )
+    with pytest.raises(ValueError, match="cannot exceed sanity_floor"):
+        EligibilityPolicy(sanity_floor=3, direct_pick_below=4)
+
+
+def test_small_eligible_set_warns_and_can_skip_quiz(bundle) -> None:
+    metadata = {
+        candidate_id: {"runtime_minutes": 200}
+        for candidate_id in bundle.candidate_ids
+    }
+    metadata["c0"]["runtime_minutes"] = 90
+    state = QuizEngine(replace(bundle, metadata=metadata)).start(
+        duration_ceiling=90
+    )
+
+    assert state.eligibility_warning
+    assert state.direct_pick
+    assert state.stopped
+    assert state.stop_reason == "direct_pick"

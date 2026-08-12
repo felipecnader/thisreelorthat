@@ -29,9 +29,19 @@ The current private deployment additionally has features that are **described in
 - refused-region filtering;
 - cross-session reuse and vivacity policy inside the variety band;
 - build-time personal probe blocklists;
-- eligibility masking, franchise dedupe, frozen single-pick delivery and “another one”.
+- franchise dedupe, frozen single-pick delivery and “another one”.
 
 Those private-deployment features require further extraction; their description below is a design/history record, not an API guarantee for this repository.
+
+Eligibility masking is part of the public core. It is constructed over the
+entire candidate catalog and applied before sorting: `catalog -> mask -> rank`.
+Duration is an inclusive ceiling; unknown runtime is fail-open, because missing
+metadata correlates with obscurity and filtering it would bias toward popular
+films. Availability is informative and never participates in the mask. The
+bundle carries a small-set warning floor and a direct-pick threshold (production
+uses 180 and 60); both are validated against the catalog size. A masked support
+recomputes its theoretical entropy floor and within-cluster delta, and an empty
+mask fails clearly.
 
 Bundles now carry `candidate_embeddings` as inert data for the future semantic
 reranker. Production artifacts use `text-embedding-3-large` with this exact

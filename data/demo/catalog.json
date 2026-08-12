@@ -545,6 +545,10 @@
   "entropy_floor": 2.5,
   "near_optimal_epsilon": 0.1,
   "opening_min_candidates": 6,
+  "eligibility": {
+    "sanity_floor": 3,
+    "direct_pick_below": 2
+  },
   "stop_rule": {
     "top_cluster_mass": 0.99,
     "entropy_floor_multiple": 0.75,

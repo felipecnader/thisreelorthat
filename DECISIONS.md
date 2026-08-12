@@ -1099,3 +1099,12 @@ Evidence:
 `data/movies-quiz-v3-evaluation/legibility-holdout-results-v2.json`,
 `data/movies-quiz-v3-evaluation/legible-pool-production-v2.json`, and
 `data/movies-quiz-v3-evaluation/operational-fixes-2026-07-30.json`.
+
+## 2026-08-12 — Variety has a measured information cost
+
+The deterministic exponential race selected the literal information-gain
+argmax in 165/591 frozen production rounds (27.9%). Of those wins, 93 were
+forced by a one-pair band. Thus roughly 72% of all rounds deliberately chose a
+near-optimal pair other than the argmax: this is the quantified information
+cost paid for pair variety, not selector error. The normalized winner positions
+match the weighted-race expectation; there is no fixed-position seed bias.

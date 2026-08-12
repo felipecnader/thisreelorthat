@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from engine import CatalogBundle, EngineParameters, StopRule
+from engine import CatalogBundle, EligibilityPolicy, EngineParameters, StopRule
 
 
 @pytest.fixture
@@ -45,6 +45,7 @@ def bundle() -> CatalogBundle:
             "model": "synthetic-test",
             "template": "candidate {id}",
         },
+        eligibility=EligibilityPolicy(sanity_floor=3, direct_pick_below=2),
         stop_rule=StopRule(
             top_cluster_mass=0.99,
             entropy_floor_multiple=0.5,
