@@ -9,7 +9,9 @@ Li os dois módulos do engine e o simulador. O motor está correto e publicável
 3. **Thresholds por contexto hard-coded no runtime** — `thresholds()` tem `nyt: 0.90/1.5` e `normal: 0.85/3.0` embutidos. Vira campo do bundle de runtime por catálogo (cada catálogo carrega seus próprios limiares calibrados, junto de floor/δ — que já estão no NPZ).
 4. **Metadados lidos dos arquivos privados de labels** — `metadata()` lê `recommendation-labels-full-v1.json` do workspace. No repo, título/ano vêm do bundle do catálogo do usuário, gerado no setup.
 
-Ponto positivo importante: o NPZ de runtime já carrega `exp_h_floor`, `delta`, parâmetros aprovados e slugs — o formato do bundle está praticamente pronto pra ser o artefato por-catálogo do repo. E o `pair_pool` pré-computado (top-768 por EIG contra o prior) é uma otimização que o README não menciona mas o código faz — documentar no docstring.
+Ponto positivo importante: o NPZ de runtime já carrega `exp_h_floor`, `delta`, parâmetros aprovados e slugs — o formato do bundle está praticamente pronto pra ser o artefato por-catálogo do repo.
+
+**Correção de proveniência do `pair_pool`:** o pool privado atual de 763 pares não foi construído a partir dos vetores e centros presentes no bundle atual. Seu artefato-fonte tinha 768 pares, escolhidos por EIG contra um prior uniforme de clusters no espaço anterior `axes-evidence-v2` (11 eixos), pelo construtor literal agora publicado em `engine/pool.py`. Na promoção, esses pares foram remapeados por slug para o runtime atual de 12 eixos e cinco foram removidos pela blocklist, restando 763. Portanto, recalcular EIG com os vetores/centros atuais não reproduz o pool histórico. Os gates coarse/fine (`L2` e número de eixos de alto contraste) pertencem à seleção online e nunca fizeram parte desse construtor; também não há quota por eixo, dedup, diversidade ou cobertura no pool promovido. Um catálogo novo deve construir um pool novo e calibrá-lo como parte do próprio build — não usar os 763 pares privados como golden output.
 
 ## Régua clean-room (o que entra / o que nunca entra)
 

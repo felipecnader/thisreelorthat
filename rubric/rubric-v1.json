@@ -1,0 +1,279 @@
+{
+  "schemaVersion": 1,
+  "rubricVersion": "production-title-year-12-axis-v1",
+  "sourceRubrics": [
+    "axes-evidence-v2",
+    "reality-split-v3",
+    "comic-serious-v1"
+  ],
+  "scale": {
+    "min": -1.0,
+    "mid": 0.0,
+    "max": 1.0,
+    "precision": 2,
+    "instruction": "Rotule a experiência dominante do filme, não sua qualidade nem a preferência do usuário. Eixos são independentes; use 0 quando os polos se equilibram."
+  },
+  "axes": [
+    {
+      "id": "heavy_light",
+      "negativeLabel": "pesado",
+      "positiveLabel": "leve",
+      "negative": "Experiência emocionalmente opressiva, dolorosa, sombria ou difícil de digerir.",
+      "zero": "Tom equilibrado, alternando peso e leveza sem domínio claro.",
+      "positive": "Experiência luminosa, divertida, reconfortante ou de baixo peso emocional.",
+      "negativeAnchors": [
+        "all-quiet-on-the-western-front-2022",
+        "the-whale-2022"
+      ],
+      "positiveAnchors": [
+        "ferris-buellers-day-off",
+        "mamma-mia"
+      ]
+    },
+    {
+      "id": "intimate_epic",
+      "negativeLabel": "íntimo",
+      "positiveLabel": "épico",
+      "negative": "Escala humana próxima, poucos personagens, conflitos internos ou relações pessoais.",
+      "zero": "Equilibra drama pessoal e escala ampla.",
+      "positive": "Grande escala espacial, histórica, mítica ou coletiva; sensação de espetáculo e mundo amplo.",
+      "negativeAnchors": [
+        "sound-of-metal",
+        "the-worst-person-in-the-world"
+      ],
+      "positiveAnchors": [
+        "the-lord-of-the-rings-the-return-of-the-king",
+        "dune-part-two"
+      ]
+    },
+    {
+      "id": "literal_impossibility",
+      "negativeLabel": "mundo literalmente possível",
+      "positiveLabel": "impossibilidade literal",
+      "negative": "O mundo do filme não contém magia, sobrenatural, criatura impossível, tecnologia ou regra incompatível com a realidade.",
+      "zero": "Ambiguidade deliberada sobre a existência literal do elemento impossível, sem resolução dominante.",
+      "positive": "O mundo contém magia, sobrenatural, ficção científica impossível, monstro ou outra regra literalmente impossível.",
+      "rules": [
+        "Estilização, animação, sonho, alucinação ou narrador não confiável não bastam por si só.",
+        "Julgue a ontologia do mundo, não o estilo da imagem."
+      ],
+      "anchors": {
+        "negative": [
+          {
+            "title": "La Haine",
+            "year": 1995,
+            "tmdbId": 406
+          },
+          {
+            "title": "Zodiac",
+            "year": 2007,
+            "tmdbId": 1949
+          }
+        ],
+        "positive": [
+          {
+            "title": "The Conjuring",
+            "year": 2013,
+            "tmdbId": 138843
+          },
+          {
+            "title": "Coraline",
+            "year": 2009,
+            "tmdbId": 14836
+          }
+        ]
+      }
+    },
+    {
+      "id": "subjective_unreality",
+      "negativeLabel": "narração confiável e representação estável",
+      "positiveLabel": "irrealidade subjetiva",
+      "negative": "A percepção narrativa é confiável e a representação permanece espacial, temporal e estilisticamente estável.",
+      "zero": "Há estilização ou passagens subjetivas, mas elas não governam a experiência narrativa dominante.",
+      "positive": "Sonho, alucinação, memória instável, narrador não confiável, realidades mentais ou estilização anti-realista governam a forma como o espectador entende o filme.",
+      "rules": [
+        "Um monstro ou magia apresentados de modo objetivo e confiável não tornam este eixo positivo.",
+        "Julgue a mediação narrativa/perceptiva, não a ontologia."
+      ],
+      "anchors": {
+        "negative": [
+          {
+            "title": "The Conjuring",
+            "year": 2013,
+            "tmdbId": 138843
+          },
+          {
+            "title": "Zodiac",
+            "year": 2007,
+            "tmdbId": 1949
+          }
+        ],
+        "positive": [
+          {
+            "title": "Mulholland Drive",
+            "year": 2001,
+            "tmdbId": 1018
+          },
+          {
+            "title": "Black Swan",
+            "year": 2010,
+            "tmdbId": 44214
+          },
+          {
+            "title": "Fear and Loathing in Las Vegas",
+            "year": 1998,
+            "tmdbId": 1878
+          }
+        ]
+      }
+    },
+    {
+      "id": "slow_propulsive",
+      "negativeLabel": "lento",
+      "positiveLabel": "propulsivo",
+      "negative": "Ritmo contemplativo, pausado, elíptico ou baseado em observação e duração.",
+      "zero": "Ritmo moderado ou variável.",
+      "positive": "Movimento narrativo constante, urgência, ação ou montagem que empurra adiante.",
+      "negativeAnchors": [
+        "the-irishman-2019",
+        "blade-runner"
+      ],
+      "positiveAnchors": [
+        "john-wick",
+        "baby-driver"
+      ]
+    },
+    {
+      "id": "cerebral_emotional",
+      "negativeLabel": "cerebral",
+      "positiveLabel": "emocional",
+      "negative": "Engajamento dominante por ideias, estrutura, mistério, estratégia ou interpretação.",
+      "zero": "Ideias e emoção têm peso semelhante.",
+      "positive": "Engajamento dominante por empatia, sentimento, relações e descarga emocional.",
+      "negativeAnchors": [
+        "memento",
+        "12-angry-men"
+      ],
+      "positiveAnchors": [
+        "coco-2017",
+        "hamnet"
+      ]
+    },
+    {
+      "id": "gray_cathartic",
+      "negativeLabel": "moralmente cinza",
+      "positiveLabel": "catártico",
+      "negative": "Evita resolução moral clara; personagens e consequências permanecem ambíguos ou corrosivos.",
+      "zero": "Mistura ambiguidade e resolução emocional.",
+      "positive": "Entrega resolução, triunfo, justiça, reconciliação ou descarga emocional clara.",
+      "negativeAnchors": [
+        "no-country-for-old-men",
+        "parasite-2019"
+      ],
+      "positiveAnchors": [
+        "the-shawshank-redemption",
+        "top-gun-maverick"
+      ]
+    },
+    {
+      "id": "classic_contemporary",
+      "negativeLabel": "clássico",
+      "positiveLabel": "contemporâneo",
+      "negative": "Gramática, ritmo e sensibilidade associados ao cinema clássico ou de outra época.",
+      "zero": "Obra de transição ou linguagem deliberadamente atemporal.",
+      "positive": "Gramática, temas, montagem e sensibilidade reconhecivelmente contemporâneos.",
+      "negativeAnchors": [
+        "seven-samurai",
+        "taxi-driver"
+      ],
+      "positiveAnchors": [
+        "challengers",
+        "everything-everywhere-all-at-once"
+      ]
+    },
+    {
+      "id": "animation_live_action",
+      "negativeLabel": "animação",
+      "positiveLabel": "live-action",
+      "negative": "Imagem predominantemente animada, independentemente de técnica ou público-alvo.",
+      "zero": "Híbrido substancial entre animação e live-action.",
+      "positive": "Imagem predominantemente captada em live-action.",
+      "negativeAnchors": [
+        "spider-man-across-the-spider-verse",
+        "spirited-away"
+      ],
+      "positiveAnchors": [
+        "there-will-be-blood",
+        "the-social-network"
+      ]
+    },
+    {
+      "id": "demanding_casual",
+      "negativeLabel": "exige energia/atenção",
+      "positiveLabel": "descompromissado",
+      "negative": "Exige concentração, tolerância à ambiguidade, densidade, duração ou esforço emocional.",
+      "zero": "Acessível, mas recompensa atenção ativa.",
+      "positive": "Pode ser acompanhado com facilidade; intenção primária de entretenimento imediato.",
+      "negativeAnchors": [
+        "mulholland-drive",
+        "zodiac"
+      ],
+      "positiveAnchors": [
+        "grown-ups",
+        "21-jump-street"
+      ]
+    },
+    {
+      "id": "english_international",
+      "negativeLabel": "língua inglesa",
+      "positiveLabel": "internacional",
+      "negative": "Diálogo predominantemente em inglês e produção cultural central anglófona.",
+      "zero": "Multilíngue, coprodução ou identidade linguística genuinamente híbrida.",
+      "positive": "Diálogo e identidade cultural predominantemente não anglófonos.",
+      "negativeAnchors": [
+        "the-social-network",
+        "whiplash-2014"
+      ],
+      "positiveAnchors": [
+        "parasite-2019",
+        "la-haine"
+      ]
+    },
+    {
+      "id": "comic_serious",
+      "negativeLabel": "cômico",
+      "positiveLabel": "sério",
+      "negative": "Humor é o motor dominante da experiência: piadas, absurdo, sátira, comicidade física ou estrutura de comédia.",
+      "zero": "Tragicomédia, humor incidental ou seco, ou alternância equilibrada entre leitura cômica e séria.",
+      "positive": "O filme pede leitura predominantemente séria; humor é ausente ou periférico.",
+      "negativeAnchors": [
+        {
+          "slug": "superbad",
+          "title": "Superbad",
+          "year": 2007,
+          "tmdbId": 8363
+        },
+        {
+          "slug": "21-jump-street",
+          "title": "21 Jump Street",
+          "year": 2012,
+          "tmdbId": 64688
+        }
+      ],
+      "positiveAnchors": [
+        {
+          "slug": "there-will-be-blood",
+          "title": "There Will Be Blood",
+          "year": 2007,
+          "tmdbId": 7345
+        },
+        {
+          "slug": "the-social-network",
+          "title": "The Social Network",
+          "year": 2010,
+          "tmdbId": 37799
+        }
+      ]
+    }
+  ]
+}
